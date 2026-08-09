@@ -1,45 +1,53 @@
 # Canonical AgroYar data source
 
-The pesticide catalog used by the Android app is generated from the project's canonical Word document.
+AgroYar's pesticide data is generated from the project Word document:
+
+**بانک پایه آفتکش‌های توصیه‌شده در ایران**  
+Compiled: 15 Mordad 1405 / 6 August 2026.
+
+The current imported document contains two structured layers used by the project:
+
+- **347** active ingredients or mixtures in the alphabetical catalog.
+- **389** detailed crop / pest-disease-weed recommendation rows.
+
+The document itself reports broader coverage of **486 trade-name/formulation records**.
 
 ## Source of truth
 
-Place the approved project Word document here as:
+The approved `.docx` remains the human-readable canonical source. Because this repository is public, the Word file is intentionally excluded by `.gitignore`; generated app assets are committed instead.
 
-`data/source/AgroYar-source.docx`
-
-The `.docx` is the human-maintained source. The Android app does **not** parse Word at runtime. Instead, the importer converts recognized Word tables to:
-
-`app/src/main/assets/pesticides.json`
-
-Run:
+The Android application does **not** parse Word at runtime. Run the reproducible importer whenever the approved Word bank changes:
 
 ```bash
-python tools/import_docx.py data/source/AgroYar-source.docx app/src/main/assets/pesticides.json
+python tools/import_docx.py data/source/AgroYar-source.docx app/src/main/assets
 ```
 
-## Recognized fields
+The importer writes gzip-compressed, base64 text chunks:
 
-The importer recognizes Persian and English aliases for:
+- `pesticides.b64.*` — searchable material catalog.
+- `recommendations.b64.*` — detailed recommendation rows.
 
-- scientific name
-- trade name(s)
-- active ingredient
-- concentration / percentage
-- formulation (EC, SC, WP, WG, SL, etc.)
-- category
-- target pest / disease / weed
-- mode of action
-- registered crops
-- dose / application guidance
-- restrictions / prohibited uses
-- weather cautions
-- water-stress cautions
-- PHI / pre-harvest interval
-- source status
+## Catalog fields
 
-The importer deliberately requires structured tables and at least two recognized columns. This prevents unrelated layout tables in Word from being silently interpreted as pesticide records.
+For each material the importer preserves or derives only what the Word tables support:
 
-## Data governance
+- Persian/common active-ingredient name
+- Latin/English name when supplied
+- trade names
+- formulation and concentration
+- pesticide category
+- resistance group / mode of action
+- crops and targets present in source recommendations
+- the complete source recommendation text containing crop-specific dose, formulation and timing
+- mixing/restriction warning text
+- WHO/LD50/source-page/status metadata where present
 
-Before a generated catalog is treated as field-use guidance, every dose, crop registration, PHI/REI, restriction, compatibility statement, and weather limitation should be traceable to the exact authoritative source used in the project Word document.
+Separate weather, water-stress, and PHI fields remain empty when the Word table does not provide dedicated values. The importer does not invent them.
+
+The detailed layer preserves the Word columns for crop, target pest/disease/weed, recommended pesticide, formulation, dose, application timing, source notes, and PDF page.
+
+## Safety and legal status
+
+The Word document defines itself as a research/base bank, not a replacement for the official product label, a plant-protection prescription, or the latest decisions of Iran's pesticide supervisory authority. Before field use, trade name, concentration, crop, target, dose, PHI, re-entry interval, and registration status must be checked against the current product label and official system.
+
+The import pipeline therefore preserves source wording and does not silently fill missing agronomic or regulatory fields from general knowledge.
