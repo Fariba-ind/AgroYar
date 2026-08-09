@@ -12,10 +12,32 @@ android {
 
     defaultConfig {
         applicationId = "ir.agroyar.app"
-        minSdk = 24
+        minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        create("agroyarDebug") {
+            // Development-only key committed intentionally so CI/debug APKs keep
+            // the same signature across builds. Never use this key for production.
+            storeFile = rootProject.file("keystore/agroyar-debug.keystore")
+            storePassword = "agroyar-debug"
+            keyAlias = "agroyar-debug"
+            keyPassword = "agroyar-debug"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("agroyarDebug")
+            isDebuggable = true
+        }
     }
 
     buildFeatures {

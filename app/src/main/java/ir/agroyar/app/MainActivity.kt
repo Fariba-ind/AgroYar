@@ -297,6 +297,29 @@ private fun SettingsScreen(
             SettingSection(t.dataSource) { Text(t.wordSourceDescription) }
         }
         item {
+            SettingSection(t.developer) {
+                Text(
+                    t.developerName,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(t.developerRole)
+                Text(t.developerDescription, style = MaterialTheme.typography.bodyMedium)
+                TextButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/Fariba-ind/AgroYar")
+                            )
+                        )
+                    }
+                ) {
+                    Text(t.projectRepository)
+                }
+            }
+        }
+        item {
             SettingSection(t.update) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("${t.currentVersion}: ${BuildConfig.VERSION_NAME}")
@@ -430,6 +453,14 @@ private class Strings(private val appLanguage: AppLanguage) {
         "فایل Word پروژه منبع مرجع بانک آفت‌کش‌ها و توصیه‌های مصرف است و برای جست‌وجوی سریع به داده ساختاریافته تبدیل می‌شود.",
         "The project Word document is the canonical source for pesticides and use recommendations and is converted to structured searchable data."
     )
+    val developer = choose("درباره سازنده", "About the developer")
+    val developerName = choose("فریبا عسگریان", "Fariba Asgarian")
+    val developerRole = choose("طراحی و توسعه اپلیکیشن AgroYar", "AgroYar application design and development")
+    val developerDescription = choose(
+        "AgroYar با هدف دسترسی سریع‌تر به اطلاعات ساختاریافته آفت‌کش‌ها و توصیه‌های کشاورزی توسعه داده شده است.",
+        "AgroYar is developed to make structured pesticide information and agricultural recommendations easier to access."
+    )
+    val projectRepository = choose("مشاهده Repository پروژه", "Open project repository")
     val update = choose("به‌روزرسانی برنامه", "App update")
     val currentVersion = choose("نسخه فعلی", "Current version")
     val checkUpdate = choose("بررسی نسخه جدید", "Check for updates")
