@@ -20,10 +20,9 @@ data class DetailedRecommendation(
 )
 
 object DetailedRecommendationsRepository {
-    private val chunks = listOf(
-        "recommendations.b64.001",
-        "recommendations.b64.002"
-    )
+    const val PREVIEW_RECORDS = 25
+    const val FULL_SOURCE_RECORDS = 389
+    private const val ASSET = "recommendations.preview.b64"
 
     fun load(context: Context): List<DetailedRecommendation> = runCatching {
         val array = JSONArray(loadCompressedJson(context))
@@ -35,15 +34,9 @@ object DetailedRecommendationsRepository {
     }.getOrElse { emptyList() }
 
     private fun loadCompressedJson(context: Context): String {
-        val encoded = buildString {
-            chunks.forEach { name ->
-                append(
-                    context.assets.open(name)
-                        .bufferedReader(Charsets.US_ASCII)
-                        .use { it.readText().trim() }
-                )
-            }
-        }
+        val encoded = context.assets.open(ASSET)
+            .bufferedReader(Charsets.US_ASCII)
+            .use { it.readText().filterNot(Char::isWhitespace) }
         val compressed = Base64.decode(encoded, Base64.DEFAULT)
         return GZIPInputStream(ByteArrayInputStream(compressed))
             .bufferedReader(Charsets.UTF_8)
