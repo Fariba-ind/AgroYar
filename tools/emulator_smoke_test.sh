@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APK="${1:-app/build/outputs/apk/debug/app-debug.apk}"
-PACKAGE="ir.agroyar.app"
-SPLASH="$PACKAGE/.SplashActivity"
-MAIN="$PACKAGE/.MainActivity"
+APK="${1:-app/build/outputs/apk/release/app-release.apk}"
+PACKAGE="ir.agroyar.mobile"
+SPLASH="$PACKAGE/ir.agroyar.app.SplashActivity"
+MAIN="ir.agroyar.app.MainActivity"
 SMOKE_DIR="build/smoke"
 DEVICE_XML="/sdcard/agroyar-window.xml"
 LOCAL_XML="$SMOKE_DIR/window.xml"
@@ -75,8 +75,6 @@ scroll_until_visible() {
     if ui_contains "$needle"; then
       return 0
     fi
-    # Swipe upward to move down a LazyColumn; coordinates work across the
-    # emulator profiles used by CI while staying away from system bars.
     adb shell input swipe 160 540 160 190 450
     sleep 1
     dump_ui
@@ -100,7 +98,7 @@ echo "== Install =="
 adb uninstall "$PACKAGE" >/dev/null 2>&1 || true
 adb install "$APK"
 
-# Verify replacement/updating works with the same signing identity.
+# Verify a same-signature replacement/update succeeds.
 adb install -r "$APK"
 
 echo "== Package metadata =="
@@ -115,7 +113,6 @@ if [[ "$START_OUTPUT" != *"Status: ok"* ]]; then
   exit 3
 fi
 
-# Splash animation lasts about 2.7 seconds; allow MainActivity to settle.
 sleep 5
 
 PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
@@ -128,14 +125,13 @@ fi
 echo "PID=$PID"
 
 ACTIVITY_DUMP="$(adb shell dumpsys activity activities)"
-printf '%s\n' "$ACTIVITY_DUMP" | grep -E "mResumedActivity|topResumedActivity|$PACKAGE" | head -40 || true
+printf '%s\n' "$ACTIVITY_DUMP" | grep -E "mResumedActivity|topResumedActivity|$PACKAGE|$MAIN" | head -40 || true
 if [[ "$ACTIVITY_DUMP" != *"$MAIN"* ]]; then
   echo "MainActivity was not found after the splash transition." >&2
   adb logcat -d -v threadtime | tail -300 >&2
   exit 5
 fi
 
-# Exercise rendered Compose UI, not just process/activity lifecycle.
 echo "== Dashboard UI =="
 dump_ui
 assert_ui_contains "اگرویار"
@@ -152,7 +148,6 @@ assert_ui_contains "درباره سازنده"
 assert_ui_contains "فریبا عسگریان"
 capture_screen "settings-developer"
 
-# The top app bar stays fixed while settings content scrolls.
 tap_ui_match "بازگشت"
 assert_ui_contains "جست‌وجوی سم"
 
@@ -163,7 +158,7 @@ capture_screen "pesticide-search"
 
 echo "== Runtime crash scan =="
 LOGS="$(adb logcat -d -v threadtime)"
-CRASH_LINES="$(grep -E 'FATAL EXCEPTION|ANR in ir\.agroyar\.app|Process: ir\.agroyar\.app' <<<"$LOGS" || true)"
+CRASH_LINES="$(grep -E "FATAL EXCEPTION|ANR in ${PACKAGE//./\\.}|Process: ${PACKAGE//./\\.}" <<<"$LOGS" || true)"
 if [[ -n "$CRASH_LINES" ]]; then
   printf '%s\n' "$CRASH_LINES" >&2
   exit 6
@@ -174,4 +169,4 @@ printf '%s\n' "$ACTIVITY_DUMP" > "$SMOKE_DIR/activity-dump.txt"
 printf '%s\n' "$LOGS" > "$SMOKE_DIR/logcat.txt"
 cp "$LOCAL_XML" "$SMOKE_DIR/final-window.xml"
 
-echo "AgroYar emulator smoke test passed."
+echo "AgroYar standalone release emulator smoke test passed."
