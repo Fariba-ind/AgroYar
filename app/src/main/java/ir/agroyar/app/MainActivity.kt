@@ -1,489 +1,332 @@
 package ir.agroyar.app
 
-import android.content.Context
+import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-class MainActivity : ComponentActivity() {
+class MainActivity : Activity() {
+    private lateinit var store: SettingsStore
+    private lateinit var t: Strings
+    private lateinit var colors: Palette
+    private lateinit var content: FrameLayout
+    private lateinit var backButton: Button
+    private lateinit var settingsButton: Button
+    private lateinit var titleView: TextView
+    private var language = AppLanguage.FA
+    private var themeMode = ThemeMode.SYSTEM
+    private var pesticides: List<Pesticide> = emptyList()
+    private var recommendations: List<DetailedRecommendation> = emptyList()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { AgroYarRoot() }
-    }
-}
-
-enum class AppLanguage { FA, EN }
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
-
-data class Pesticide(
-    val id: String,
-    val scientificName: String,
-    val tradeNames: List<String>,
-    val activeIngredient: String,
-    val concentration: String,
-    val formulation: String,
-    val category: String,
-    val target: String,
-    val modeOfAction: String,
-    val registeredCrops: String,
-    val doseGuidance: String,
-    val restrictions: String,
-    val weatherCautions: String,
-    val waterStressCautions: String,
-    val phi: String,
-    val sourceStatus: String
-)
-
-private class SettingsStore(context: Context) {
-    private val prefs = context.getSharedPreferences("agroyar_settings", Context.MODE_PRIVATE)
-
-    fun language(): AppLanguage = runCatching {
-        AppLanguage.valueOf(prefs.getString("language", AppLanguage.FA.name) ?: AppLanguage.FA.name)
-    }.getOrDefault(AppLanguage.FA)
-
-    fun theme(): ThemeMode = runCatching {
-        ThemeMode.valueOf(prefs.getString("theme", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
-    }.getOrDefault(ThemeMode.SYSTEM)
-
-    fun saveLanguage(value: AppLanguage) = prefs.edit().putString("language", value.name).apply()
-    fun saveTheme(value: ThemeMode) = prefs.edit().putString("theme", value.name).apply()
-}
-
-@Composable
-private fun AgroYarRoot() {
-    val context = LocalContext.current
-    val store = remember { SettingsStore(context) }
-    var language by remember { mutableStateOf(store.language()) }
-    var themeMode by remember { mutableStateOf(store.theme()) }
-
-    val dark = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
-    val direction = if (language == AppLanguage.FA) LayoutDirection.Rtl else LayoutDirection.Ltr
-
-    val lightScheme = lightColorScheme(
-        primary = Color(0xFF2E7D32),
-        onPrimary = Color.White,
-        secondary = Color(0xFF6B9F35),
-        surface = Color(0xFFFCFDF7),
-        surfaceVariant = Color(0xFFEEF3E5),
-        background = Color(0xFFF8FAF3)
-    )
-    val darkScheme = darkColorScheme(
-        primary = Color(0xFF8BCB6D),
-        secondary = Color(0xFFA7D47E)
-    )
-
-    CompositionLocalProvider(LocalLayoutDirection provides direction) {
-        MaterialTheme(colorScheme = if (dark) darkScheme else lightScheme) {
-            Surface(modifier = Modifier.fillMaxSize()) {
-                AgroYarApp(
-                    language = language,
-                    themeMode = themeMode,
-                    onLanguageChange = {
-                        language = it
-                        store.saveLanguage(it)
-                    },
-                    onThemeChange = {
-                        themeMode = it
-                        store.saveTheme(it)
-                    }
-                )
-            }
+        try {
+            store = SettingsStore(this)
+            language = store.language()
+            themeMode = store.theme()
+            t = Strings(language)
+            colors = palette(isDarkMode(this, themeMode))
+            configureWindow()
+            loadDataSafely()
+            buildShell()
+            openHome()
+        } catch (error: Throwable) {
+            showSafeMode(error)
         }
     }
-}
 
-private sealed interface Screen {
-    data object Home : Screen
-    data object Settings : Screen
-    data class Detail(val pesticide: Pesticide) : Screen
-}
+    private fun configureWindow() {
+        window.statusBarColor = colors.background
+        window.navigationBarColor = colors.background
+        if (Build.VERSION.SDK_INT >= 23 && !isDarkMode(this, themeMode)) {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+    }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AgroYarApp(
-    language: AppLanguage,
-    themeMode: ThemeMode,
-    onLanguageChange: (AppLanguage) -> Unit,
-    onThemeChange: (ThemeMode) -> Unit
-) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    val t = remember(language) { Strings(language) }
+    private fun loadDataSafely() {
+        pesticides = runCatching { WordCatalogRepository.load(applicationContext) }.getOrDefault(emptyList())
+        recommendations = runCatching { DetailedRecommendationsRepository.load(applicationContext) }.getOrDefault(emptyList())
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(t.appName, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
-                navigationIcon = {
-                    if (screen !is Screen.Home) {
-                        IconButton(onClick = { screen = Screen.Home }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t.back)
-                        }
-                    }
-                },
-                actions = {
-                    if (screen is Screen.Home) {
-                        IconButton(onClick = { screen = Screen.Settings }) {
-                            Icon(Icons.Default.Settings, contentDescription = t.settings)
-                        }
-                    }
+    private fun buildShell() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(colors.background)
+            layoutDirection = if (language == AppLanguage.FA) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+        }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setBackgroundColor(colors.surface)
+        }
+        backButton = Button(this).apply {
+            text = if (language == AppLanguage.FA) "← ${t.back}" else "← ${t.back}"
+            isAllCaps = false
+            visibility = View.GONE
+            setTextColor(colors.primary)
+            setBackgroundColor(Color.TRANSPARENT)
+            contentDescription = t.back
+            setOnClickListener { openHome() }
+        }
+        titleView = titleText(this, t.appName, colors, 21f).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        settingsButton = Button(this).apply {
+            text = "⚙"
+            textSize = 22f
+            setTextColor(colors.primary)
+            setBackgroundColor(Color.TRANSPARENT)
+            contentDescription = t.settings
+            setOnClickListener { openSettings() }
+        }
+        top.addView(backButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)))
+        top.addView(titleView, LinearLayout.LayoutParams(0, dp(48), 1f))
+        top.addView(settingsButton, LinearLayout.LayoutParams(dp(56), dp(48)))
+
+        content = FrameLayout(this).apply { setBackgroundColor(colors.background) }
+        root.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        setContentView(root)
+    }
+
+    private fun setTopBar(title: String, canGoBack: Boolean, showSettings: Boolean = false) {
+        titleView.text = title
+        backButton.visibility = if (canGoBack) View.VISIBLE else View.GONE
+        settingsButton.visibility = if (showSettings) View.VISIBLE else View.GONE
+    }
+
+    fun openHome() {
+        runScreen(t.appName, canGoBack = false, showSettings = true) {
+            CompatScreens.showHome(this, content, t, colors, pesticides, recommendations)
+        }
+    }
+
+    fun openPesticideSearch(initialQuery: String = "") {
+        runScreen(t.pesticideSearch, true) {
+            CompatScreens.showPesticideSearch(this, content, t, colors, pesticides, initialQuery)
+        }
+    }
+
+    fun openCropSearch() {
+        runScreen(t.cropSearch, true) {
+            CompatScreens.showRecommendationSearch(this, content, t, colors, recommendations, byCrop = true)
+        }
+    }
+
+    fun openTargetSearch() {
+        runScreen(t.targetSearch, true) {
+            CompatScreens.showRecommendationSearch(this, content, t, colors, recommendations, byCrop = false)
+        }
+    }
+
+    fun openPesticideDetail(item: Pesticide) {
+        runScreen(t.pesticideSearch, true) {
+            CompatScreens.showPesticideDetail(this, content, t, colors, item)
+        }
+    }
+
+    fun openRecommendationDetail(item: DetailedRecommendation) {
+        runScreen(t.recommendations, true) {
+            CompatScreens.showRecommendationDetail(this, content, t, colors, item)
+        }
+    }
+
+    private fun runScreen(title: String, canGoBack: Boolean, showSettings: Boolean = false, block: () -> Unit) {
+        try {
+            setTopBar(title, canGoBack, showSettings)
+            block()
+        } catch (error: Throwable) {
+            showInlineError(error)
+        }
+    }
+
+    private fun openSettings() {
+        runScreen(t.settings, true) {
+            content.removeAllViews()
+            val scroll = ScrollView(this)
+            val column = vertical(this, 16)
+            column.setBackgroundColor(colors.background)
+
+            val languageGroup = RadioGroup(this).apply {
+                orientation = RadioGroup.VERTICAL
+                addView(choice("فارسی", language == AppLanguage.FA) {
+                    store.saveLanguage(AppLanguage.FA)
+                    recreate()
+                })
+                addView(choice("English", language == AppLanguage.EN) {
+                    store.saveLanguage(AppLanguage.EN)
+                    recreate()
+                })
+            }
+            column.addView(sectionCard(this, colors, t.languageTitle, languageGroup, 0))
+
+            val themeGroup = RadioGroup(this).apply {
+                orientation = RadioGroup.VERTICAL
+                addView(choice(t.systemTheme, themeMode == ThemeMode.SYSTEM) {
+                    store.saveTheme(ThemeMode.SYSTEM)
+                    recreate()
+                })
+                addView(choice(t.lightTheme, themeMode == ThemeMode.LIGHT) {
+                    store.saveTheme(ThemeMode.LIGHT)
+                    recreate()
+                })
+                addView(choice(t.darkTheme, themeMode == ThemeMode.DARK) {
+                    store.saveTheme(ThemeMode.DARK)
+                    recreate()
+                })
+            }
+            column.addView(sectionCard(this, colors, t.themeTitle, themeGroup))
+
+            val sourceBody = bodyText(this, t.sourceText, colors)
+            column.addView(sectionCard(this, colors, t.source, sourceBody))
+
+            val developerBody = vertical(this).apply {
+                addView(titleText(this@MainActivity, t.developerName, colors, 17f))
+                addView(bodyText(this@MainActivity, t.developerRole, colors, 14f), matchWrap(4))
+                val repository = actionButton(this@MainActivity, "GitHub: Fariba-ind/AgroYar", colors).apply {
+                    setOnClickListener { openWeb("https://github.com/Fariba-ind/AgroYar") }
                 }
-            )
-        }
-    ) { padding ->
-        Box(Modifier.padding(padding)) {
-            when (val current = screen) {
-                Screen.Home -> AgroDashboard(
-                    language = language,
-                    onOpenPesticide = { screen = Screen.Detail(it) }
-                )
-                Screen.Settings -> SettingsScreen(
-                    t = t,
-                    language = language,
-                    themeMode = themeMode,
-                    onLanguageChange = onLanguageChange,
-                    onThemeChange = onThemeChange
-                )
-                is Screen.Detail -> DetailScreen(current.pesticide, t)
+                addView(repository, matchWrap(8))
             }
-        }
-    }
-}
+            column.addView(sectionCard(this, colors, t.developer, developerBody))
 
-@Composable
-private fun DetailScreen(item: Pesticide, t: Strings) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(
-                item.scientificName.ifBlank { item.tradeNames.firstOrNull().orEmpty() },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            if (item.sourceStatus.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(item.sourceStatus, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        detailItem(t.tradeName, item.tradeNames.joinToString())
-        detailItem(t.activeIngredient, item.activeIngredient)
-        detailItem(t.concentration, item.concentration)
-        detailItem(t.formulation, item.formulation)
-        detailItem(t.category, item.category)
-        detailItem(t.target, item.target)
-        detailItem(t.modeOfAction, item.modeOfAction)
-        detailItem(t.registeredCrops, item.registeredCrops)
-        detailItem(t.dose, item.doseGuidance)
-        detailItem(t.restrictions, item.restrictions)
-        detailItem(t.weather, item.weatherCautions)
-        detailItem(t.waterStress, item.waterStressCautions)
-        detailItem(t.phi, item.phi)
-    }
-}
-
-private fun androidx.compose.foundation.lazy.LazyListScope.detailItem(title: String, value: String) {
-    if (value.isBlank()) return
-    item {
-        Card(shape = RoundedCornerShape(16.dp)) {
-            Column(
-                Modifier.fillMaxWidth().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(value)
-            }
-        }
-    }
-}
-
-private sealed interface UpdateState {
-    data object Idle : UpdateState
-    data object Loading : UpdateState
-    data class Result(val message: String, val url: String? = null) : UpdateState
-}
-
-@Composable
-private fun SettingsScreen(
-    t: Strings,
-    language: AppLanguage,
-    themeMode: ThemeMode,
-    onLanguageChange: (AppLanguage) -> Unit,
-    onThemeChange: (ThemeMode) -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        item {
-            SettingSection(t.language) {
-                ChoiceRow("فارسی", language == AppLanguage.FA) { onLanguageChange(AppLanguage.FA) }
-                ChoiceRow("English", language == AppLanguage.EN) { onLanguageChange(AppLanguage.EN) }
-            }
-        }
-        item {
-            SettingSection(t.theme) {
-                ThemeMode.entries.forEach { value ->
-                    ChoiceRow(t.themeLabel(value), themeMode == value) { onThemeChange(value) }
+            val versionBody = vertical(this).apply {
+                addView(bodyText(this@MainActivity, "${t.version}: ${BuildConfig.VERSION_NAME}", colors))
+                val check = actionButton(this@MainActivity, if (language == AppLanguage.FA) "بررسی نسخه جدید" else "Check for updates", colors)
+                val result = mutedText(this@MainActivity, "", colors)
+                check.setOnClickListener {
+                    check.isEnabled = false
+                    result.text = if (language == AppLanguage.FA) "در حال بررسی..." else "Checking..."
+                    checkForUpdateAsync(check, result)
                 }
+                addView(check, matchWrap(8))
+                addView(result, matchWrap(8))
             }
+            column.addView(sectionCard(this, colors, t.version, versionBody))
+            column.addView(bodyText(this, t.dataNotice, colors, 12f), matchWrap(14))
+            column.addView(spacer(this, 20))
+
+            scroll.addView(column, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            content.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
-        item {
-            SettingSection(t.dataSource) { Text(t.wordSourceDescription) }
-        }
-        item {
-            SettingSection(t.developer) {
-                Text(
-                    t.developerName,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(t.developerRole)
-                Text(t.developerDescription, style = MaterialTheme.typography.bodyMedium)
-                TextButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://github.com/Fariba-ind/AgroYar")
-                            )
-                        )
-                    }
-                ) {
-                    Text(t.projectRepository)
+    }
+
+    private fun choice(label: String, checked: Boolean, action: () -> Unit): RadioButton = RadioButton(this).apply {
+        text = label
+        isChecked = checked
+        setTextColor(colors.text)
+        textSize = 15f
+        setPadding(dp(4), dp(4), dp(4), dp(4))
+        setOnClickListener { action() }
+    }
+
+    private fun checkForUpdateAsync(button: Button, result: TextView) {
+        Thread {
+            val message = runCatching {
+                val connection = URL("https://api.github.com/repos/Fariba-ind/AgroYar/releases/latest").openConnection() as HttpURLConnection
+                connection.connectTimeout = 7000
+                connection.readTimeout = 7000
+                connection.setRequestProperty("Accept", "application/vnd.github+json")
+                connection.setRequestProperty("User-Agent", "AgroYar-Android")
+                val code = connection.responseCode
+                if (code == 404) {
+                    connection.disconnect()
+                    return@runCatching if (language == AppLanguage.FA) "هنوز نسخه Release منتشر نشده است." else "No release is published yet."
+                }
+                if (code !in 200..299) {
+                    connection.disconnect()
+                    return@runCatching if (language == AppLanguage.FA) "بررسی نسخه انجام نشد." else "Update check failed."
+                }
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                connection.disconnect()
+                val latest = JSONObject(body).optString("tag_name").removePrefix("v")
+                if (latest.isBlank()) {
+                    if (language == AppLanguage.FA) "اطلاعات نسخه معتبر نبود." else "Invalid release information."
+                } else if (compareVersions(latest, BuildConfig.VERSION_NAME) > 0) {
+                    if (language == AppLanguage.FA) "نسخه $latest موجود است." else "Version $latest is available."
+                } else {
+                    if (language == AppLanguage.FA) "برنامه به‌روز است." else "The app is up to date."
+                }
+            }.getOrElse {
+                if (language == AppLanguage.FA) "اتصال به سرور نسخه انجام نشد." else "Could not reach the update server."
+            }
+            runOnUiThread {
+                if (!isFinishing) {
+                    result.text = message
+                    button.isEnabled = true
                 }
             }
+        }.apply { name = "AgroYar-UpdateCheck" }.start()
+    }
+
+    private fun compareVersions(a: String, b: String): Int {
+        val left = a.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val right = b.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val size = maxOf(left.size, right.size)
+        for (i in 0 until size) {
+            val x = left.getOrElse(i) { 0 }
+            val y = right.getOrElse(i) { 0 }
+            if (x != y) return x.compareTo(y)
         }
-        item {
-            SettingSection(t.update) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${t.currentVersion}: ${BuildConfig.VERSION_NAME}")
-                    Button(
-                        enabled = updateState !is UpdateState.Loading,
-                        onClick = {
-                            updateState = UpdateState.Loading
-                            scope.launch { updateState = checkForUpdate(t) }
-                        }
-                    ) {
-                        if (updateState is UpdateState.Loading) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text(t.checkUpdate)
-                    }
-                    val result = updateState as? UpdateState.Result
-                    if (result != null) {
-                        Text(result.message)
-                        if (result.url != null) {
-                            TextButton(onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.url)))
-                            }) { Text(t.openRelease) }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Text(
-                t.dataNotice,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        return 0
+    }
+
+    private fun openWeb(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Throwable) {
+            Toast.makeText(this, url, Toast.LENGTH_LONG).show()
         }
     }
-}
 
-@Composable
-private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(label)
-    }
-}
-
-@Composable
-private fun SettingSection(title: String, content: @Composable () -> Unit) {
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            content()
+    private fun showInlineError(error: Throwable) {
+        content.removeAllViews()
+        val message = TextView(this).apply {
+            text = "${t.fatalBody}\n\n${error.javaClass.simpleName}: ${error.message.orEmpty()}"
+            setTextColor(colors.text)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
         }
+        content.addView(message, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
-}
 
-private suspend fun checkForUpdate(t: Strings): UpdateState.Result = withContext(Dispatchers.IO) {
-    try {
-        val connection = (URL("https://api.github.com/repos/Fariba-ind/AgroYar/releases/latest")
-            .openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8_000
-            readTimeout = 8_000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "AgroYar-Android")
+    private fun showSafeMode(error: Throwable) {
+        val dark = false
+        val safeColors = palette(dark)
+        window.statusBarColor = safeColors.background
+        window.navigationBarColor = safeColors.background
+        val root = vertical(this, 24).apply {
+            gravity = Gravity.CENTER
+            setBackgroundColor(safeColors.background)
         }
-        if (connection.responseCode == 404) {
-            connection.disconnect()
-            return@withContext UpdateState.Result(t.noRelease)
-        }
-        if (connection.responseCode !in 200..299) {
-            connection.disconnect()
-            return@withContext UpdateState.Result(t.updateError)
-        }
-        val body = connection.inputStream.bufferedReader().use { it.readText() }
-        connection.disconnect()
-        val json = JSONObject(body)
-        val latest = json.optString("tag_name").removePrefix("v")
-        val page = json.optString("html_url").takeIf { it.startsWith("https://") }
-        if (latest.isBlank()) return@withContext UpdateState.Result(t.updateError)
-
-        if (compareVersions(latest, BuildConfig.VERSION_NAME) > 0) {
-            UpdateState.Result(t.updateAvailable(latest), page)
-        } else UpdateState.Result(t.upToDate)
-    } catch (_: Exception) {
-        UpdateState.Result(t.updateError)
+        val safeLanguage = runCatching { SettingsStore(this).language() }.getOrDefault(AppLanguage.FA)
+        val safeStrings = Strings(safeLanguage)
+        root.addView(titleText(this, safeStrings.fatalTitle, safeColors, 22f))
+        root.addView(bodyText(this, safeStrings.fatalBody, safeColors, 15f), matchWrap(14))
+        root.addView(mutedText(this, "${error.javaClass.name}\n${error.message.orEmpty()}", safeColors, 12f), matchWrap(14))
+        setContentView(root)
     }
-}
 
-private fun compareVersions(a: String, b: String): Int {
-    val left = a.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
-    val right = b.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
-    val size = maxOf(left.size, right.size)
-    for (index in 0 until size) {
-        val x = left.getOrElse(index) { 0 }
-        val y = right.getOrElse(index) { 0 }
-        if (x != y) return x.compareTo(y)
-    }
-    return 0
-}
-
-private class Strings(private val appLanguage: AppLanguage) {
-    private fun choose(fa: String, en: String) = if (appLanguage == AppLanguage.FA) fa else en
-
-    val appName = choose("اگرویار", "AgroYar")
-    val back = choose("بازگشت", "Back")
-    val settings = choose("تنظیمات", "Settings")
-    val activeIngredient = choose("ماده مؤثره", "Active ingredient")
-    val tradeName = choose("نام تجاری", "Trade name")
-    val concentration = choose("درصد/غلظت ماده مؤثره", "Active concentration")
-    val formulation = choose("فرمولاسیون", "Formulation")
-    val category = choose("گروه", "Category")
-    val target = choose("هدف مصرف", "Target")
-    val modeOfAction = choose("نحوه اثر", "Mode of action")
-    val registeredCrops = choose("محصولات مجاز", "Registered crops")
-    val dose = choose("دُز و نحوه مصرف", "Dose and application")
-    val restrictions = choose("محدودیت‌ها و منع مصرف", "Restrictions")
-    val weather = choose("شرایط آب‌وهوایی", "Weather cautions")
-    val waterStress = choose("تنش آبی", "Water-stress cautions")
-    val phi = choose("فاصله تا برداشت (PHI)", "Pre-harvest interval (PHI)")
-    val language = choose("زبان", "Language")
-    val theme = choose("حالت نمایش", "Appearance")
-    val dataSource = choose("منبع داده", "Data source")
-    val wordSourceDescription = choose(
-        "فایل Word پروژه منبع مرجع بانک آفت‌کش‌ها و توصیه‌های مصرف است و برای جست‌وجوی سریع به داده ساختاریافته تبدیل می‌شود.",
-        "The project Word document is the canonical source for pesticides and use recommendations and is converted to structured searchable data."
-    )
-    val developer = choose("درباره سازنده", "About the developer")
-    val developerName = choose("فریبا عسگریان", "Fariba Asgarian")
-    val developerRole = choose("طراحی و توسعه اپلیکیشن AgroYar", "AgroYar application design and development")
-    val developerDescription = choose(
-        "AgroYar با هدف دسترسی سریع‌تر به اطلاعات ساختاریافته آفت‌کش‌ها و توصیه‌های کشاورزی توسعه داده شده است.",
-        "AgroYar is developed to make structured pesticide information and agricultural recommendations easier to access."
-    )
-    val projectRepository = choose("مشاهده Repository پروژه", "Open project repository")
-    val update = choose("به‌روزرسانی برنامه", "App update")
-    val currentVersion = choose("نسخه فعلی", "Current version")
-    val checkUpdate = choose("بررسی نسخه جدید", "Check for updates")
-    val openRelease = choose("باز کردن صفحه نسخه", "Open release page")
-    val noRelease = choose(
-        "هنوز نسخه رسمی در GitHub Releases منتشر نشده است.",
-        "No official GitHub Release has been published yet."
-    )
-    val updateError = choose(
-        "بررسی نسخه انجام نشد. اتصال اینترنت یا GitHub را بررسی کنید.",
-        "Could not check for updates. Check internet/GitHub access."
-    )
-    val upToDate = choose("برنامه به‌روز است.", "The app is up to date.")
-    val dataNotice = choose(
-        "هشدار: برای مصرف مزرعه‌ای، دُز، ثبت محصول، کارنس و محدودیت‌ها را با برچسب روز فرآورده و منابع رسمی تطبیق دهید.",
-        "Safety: verify field-use rates, registrations, PHI and restrictions against the current product label and official sources."
-    )
-
-    fun updateAvailable(version: String) = choose("نسخه جدید $version موجود است.", "Version $version is available.")
-
-    fun themeLabel(mode: ThemeMode) = when (mode) {
-        ThemeMode.SYSTEM -> choose("بر اساس تنظیمات گوشی", "Use system setting")
-        ThemeMode.LIGHT -> choose("روشن", "Light")
-        ThemeMode.DARK -> choose("تیره", "Dark")
+    private fun matchWrap(topMargin: Int = 0) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        this.topMargin = dp(topMargin)
     }
 }
