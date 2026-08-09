@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""Convert AgroYar's canonical Word source into the Android JSON catalog.
+"""Build AgroYar Android data assets from the canonical Word document.
 
-The importer uses only Python's standard library. It reads tables from a .docx
-file and maps Persian/English column headings to the pesticide schema used by
-the Android app.
+The canonical Word bank contains two structured data layers:
+1. the active-ingredient / mixture catalog (one row per material), and
+2. the detailed crop-target recommendation table.
+
+This importer deliberately preserves source text instead of inventing missing
+PHI, weather, water-stress, incompatibility, dose, or registration data.
+Generated JSON is gzip-compressed, base64-encoded, and split into text chunks
+that Android can package as assets.
 
 Usage:
-    python tools/import_docx.py data/source/AgroYar-source.docx \
-        app/src/main/assets/pesticides.json
+    python tools/import_docx.py SOURCE.docx [ASSETS_DIR]
+
+Default ASSETS_DIR: app/src/main/assets
 """
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import re
 import sys
@@ -22,71 +30,32 @@ from xml.etree import ElementTree as ET
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
-
-FIELD_ALIASES = {
-    "id": ["id", "شناسه"],
-    "scientificName": ["scientific name", "نام علمی", "اسم علمی"],
-    "tradeNames": ["trade name", "trade names", "brand name", "نام تجاری", "اسم تجاری"],
-    "activeIngredient": ["active ingredient", "ماده موثره", "ماده مؤثره"],
-    "concentration": [
-        "concentration", "active concentration", "درصد ماده موثره", "درصد ماده مؤثره",
-        "غلظت", "درصد/غلظت ماده موثره", "درصد/غلظت ماده مؤثره"
-    ],
-    "formulation": ["formulation", "فرمولاسیون", "نوع فرمولاسیون"],
-    "category": ["category", "group", "گروه", "نوع سم"],
-    "target": ["target", "target pest", "هدف", "هدف مصرف", "آفت هدف"],
-    "modeOfAction": ["mode of action", "نحوه اثر", "مکانیسم اثر", "مکانیزم اثر"],
-    "registeredCrops": [
-        "registered crops", "crops", "محصولات مجاز", "محصولات قابل استفاده",
-        "در چه محصولاتی قابل استفاده است", "محصول"
-    ],
-    "doseGuidance": [
-        "dose", "rate", "dose and application", "دز", "دوز", "دز مصرف", "دوز مصرف",
-        "دز و نحوه مصرف", "میزان مصرف"
-    ],
-    "restrictions": [
-        "restrictions", "prohibited uses", "محدودیت", "محدودیت ها", "محدودیت‌ها",
-        "منع مصرف", "موارد منع مصرف"
-    ],
-    "weatherCautions": [
-        "weather cautions", "weather", "شرایط آب و هوایی", "شرایط آب‌وهوایی",
-        "محدودیت آب و هوایی"
-    ],
-    "waterStressCautions": [
-        "water stress", "water-stress cautions", "تنش آبی", "تنش خشکی"
-    ],
-    "phi": [
-        "phi", "pre harvest interval", "pre-harvest interval", "کارنس", "دوره کارنس",
-        "فاصله تا برداشت"
-    ],
-    "sourceStatus": ["source", "source status", "منبع", "وضعیت منبع"],
-}
-
-REQUIRED_FOR_RECORD = ("scientificName", "tradeNames", "activeIngredient")
+CHUNK_SIZE = 60_000
 
 
-def normalize(value: str) -> str:
+def clean_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     value = value.replace("ي", "ی").replace("ك", "ک")
-    value = value.replace("\u200c", " ")
-    value = re.sub(r"[^\w\u0600-\u06ff%/+-]+", " ", value, flags=re.UNICODE)
-    return re.sub(r"\s+", " ", value).strip().casefold()
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    return value.strip()
 
 
-NORMALIZED_ALIASES = {
-    field: {normalize(alias) for alias in aliases}
-    for field, aliases in FIELD_ALIASES.items()
-}
+def normalized(value: str) -> str:
+    value = clean_text(value).replace("\u200c", " ")
+    value = re.sub(r"\s+", " ", value)
+    return value.casefold().strip()
 
 
 def text_from_cell(cell: ET.Element) -> str:
-    paragraphs = []
+    paragraphs: list[str] = []
     for paragraph in cell.findall(".//w:p", NS):
         chunks = [node.text or "" for node in paragraph.findall(".//w:t", NS)]
-        text = "".join(chunks).strip()
+        text = clean_text("".join(chunks))
         if text:
             paragraphs.append(text)
-    return "\n".join(paragraphs).strip()
+    return clean_text("\n".join(paragraphs))
 
 
 def read_tables(docx_path: Path) -> list[list[list[str]]]:
@@ -98,129 +67,228 @@ def read_tables(docx_path: Path) -> list[list[list[str]]]:
         rows: list[list[str]] = []
         for row in table.findall("./w:tr", NS):
             cells = [text_from_cell(cell) for cell in row.findall("./w:tc", NS)]
-            if any(cell.strip() for cell in cells):
+            if any(cell for cell in cells):
                 rows.append(cells)
         if rows:
             tables.append(rows)
     return tables
 
 
-def map_header(header: list[str]) -> dict[int, str]:
-    mapping: dict[int, str] = {}
-    for index, raw in enumerate(header):
-        key = normalize(raw)
-        if not key:
+def find_table(tables: list[list[list[str]]], required_headers: list[str]) -> list[list[str]]:
+    required = [normalized(item) for item in required_headers]
+    for table in tables:
+        if not table:
             continue
-        best_field = None
-        best_score = 0
-        for field, aliases in NORMALIZED_ALIASES.items():
-            for alias in aliases:
-                if key == alias:
-                    best_field, best_score = field, 3
-                    break
-                if alias and (alias in key or key in alias) and best_score < 2:
-                    best_field, best_score = field, 2
-            if best_score == 3:
-                break
-        if best_field:
-            mapping[index] = best_field
-    return mapping
+        header = " | ".join(normalized(cell) for cell in table[0])
+        if all(item in header for item in required):
+            return table
+    raise ValueError(f"Could not find table with headers: {required_headers}")
 
 
-def split_trade_names(value: str) -> list[str]:
-    return [
-        part.strip()
-        for part in re.split(r"[;؛,،\n]+", value or "")
-        if part.strip()
-    ]
+def unique(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        value = clean_text(value)
+        key = normalized(value)
+        if value and key not in seen:
+            seen.add(key)
+            result.append(value)
+    return result
 
 
-def slugify(value: str, fallback: str) -> str:
-    slug = normalize(value)
-    slug = re.sub(r"\s+", "-", slug)
-    slug = re.sub(r"[^\w\u0600-\u06ff-]+", "", slug, flags=re.UNICODE).strip("-")
-    return slug or fallback
+def marker_slice(text: str, start_pattern: str, end_patterns: tuple[str, ...] = ()) -> str:
+    start = re.search(start_pattern, text, flags=re.IGNORECASE)
+    if not start:
+        return ""
+    end_index = len(text)
+    tail = text[start.end():]
+    for pattern in end_patterns:
+        match = re.search(pattern, tail, flags=re.IGNORECASE)
+        if match:
+            end_index = min(end_index, start.end() + match.start())
+    return clean_text(text[start.end():end_index])
 
 
-def record_from_row(row: list[str], mapping: dict[int, str], ordinal: int) -> dict[str, object]:
-    record: dict[str, object] = {field: "" for field in FIELD_ALIASES}
-    record["tradeNames"] = []
-    for index, field in mapping.items():
-        value = row[index].strip() if index < len(row) else ""
-        if field == "tradeNames":
-            record[field] = split_trade_names(value)
-        else:
-            record[field] = value
-    if not record["id"]:
-        seed = str(record["scientificName"] or (record["tradeNames"][0] if record["tradeNames"] else ""))
-        record["id"] = slugify(seed, f"word-record-{ordinal}")
-    if not record["sourceStatus"]:
-        record["sourceStatus"] = "Imported from canonical AgroYar Word source"
-    return record
+def parse_identity(cell: str, ordinal: int) -> tuple[str, str, str]:
+    text = clean_text(cell)
+    row_match = re.match(r"^\s*(\d+)\s*[.．]?\s*", text)
+    row_number = row_match.group(1) if row_match else str(ordinal)
+    body = text[row_match.end():] if row_match else text
+
+    latin_match = re.search(r"Latin\s*/\s*English\s*:\s*(.*)$", body, flags=re.I | re.S)
+    if latin_match:
+        native = clean_text(body[:latin_match.start()])
+        latin = clean_text(latin_match.group(1))
+        if latin in {"—", "-"}:
+            latin = ""
+    else:
+        native = clean_text(body)
+        latin = ""
+
+    scientific = latin or native
+    return row_number, native, scientific
 
 
-def meaningful(record: dict[str, object]) -> bool:
-    return any(record.get(field) for field in REQUIRED_FOR_RECORD)
+def parse_product_cell(cell: str) -> tuple[str, list[str], str, str]:
+    text = clean_text(cell)
+    category = marker_slice(
+        text,
+        r"طبقه\s*:\s*",
+        (r"نام(?:\u200c|\s)*های\s*تجاری\s*:", r"فرمولاسیون(?:\u200c|\s)*ها\s*:")
+    )
+    trade_raw = marker_slice(
+        text,
+        r"نام(?:\u200c|\s)*های\s*تجاری\s*:\s*",
+        (r"فرمولاسیون(?:\u200c|\s)*ها\s*:",)
+    )
+    formulation = marker_slice(text, r"فرمولاسیون(?:\u200c|\s)*ها\s*:\s*")
+
+    if normalized(trade_raw).startswith("نام تجاری در منبع درج نشده"):
+        trade_names: list[str] = []
+    else:
+        trade_names = unique(re.split(r"[،,؛;\n]+", trade_raw))
+
+    concentrations = unique(
+        re.findall(r"\d+(?:[./]\d+)?\s*%", formulation)
+    )
+    concentration = "، ".join(concentrations)
+    return category, trade_names, formulation, concentration
 
 
-def extract_records(docx_path: Path) -> list[dict[str, object]]:
+def parse_usage_summary(cell: str) -> tuple[str, str]:
+    text = clean_text(cell)
+    crops: list[str] = []
+    targets: list[str] = []
+
+    # Each use normally starts with: 1) crop | target | dose ...
+    starts = list(re.finditer(r"(?m)(?:^|\n)\s*\d+\s*\)\s*", text))
+    for index, match in enumerate(starts):
+        start = match.end()
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(text)
+        block = clean_text(text[start:end])
+        parts = [clean_text(part) for part in block.split("|")]
+        if parts and parts[0]:
+            crops.append(parts[0])
+        if len(parts) > 1 and parts[1]:
+            targets.append(parts[1])
+
+    return "، ".join(unique(crops)), "؛ ".join(unique(targets))
+
+
+def extract_catalog(table: list[list[str]]) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
-    tables = read_tables(docx_path)
-    for table_index, rows in enumerate(tables, start=1):
-        if len(rows) < 2:
+    for ordinal, row in enumerate(table[1:], start=1):
+        if len(row) < 6 or not any(clean_text(cell) for cell in row):
             continue
-        mapping = map_header(rows[0])
-        if not mapping:
-            continue
-        # Require at least two recognized columns so arbitrary formatting tables
-        # are not mistaken for pesticide data.
-        if len(mapping) < 2:
-            continue
-        for row_index, row in enumerate(rows[1:], start=1):
-            record = record_from_row(row, mapping, len(records) + 1)
-            if meaningful(record):
-                record["sourceStatus"] = (
-                    f"Imported from canonical AgroYar Word source; table {table_index}, row {row_index}"
-                )
-                records.append(record)
+
+        row_number, native_name, scientific_name = parse_identity(row[0], ordinal)
+        category, trade_names, formulation, concentration = parse_product_cell(row[1])
+        registered_crops, targets = parse_usage_summary(row[3])
+
+        records.append({
+            "id": f"word-{row_number}",
+            "scientificName": scientific_name,
+            "tradeNames": trade_names,
+            "activeIngredient": native_name,
+            "concentration": concentration,
+            "formulation": clean_text(formulation),
+            "category": clean_text(category),
+            "target": targets,
+            "modeOfAction": clean_text(row[2]),
+            "registeredCrops": registered_crops,
+            # Preserve the complete source column so crop-specific rate,
+            # formulation and timing are not detached from one another.
+            "doseGuidance": clean_text(row[3]),
+            "restrictions": clean_text(row[4]),
+            # These are intentionally blank unless the Word bank supplies
+            # dedicated fields. The importer does not infer them.
+            "weatherCautions": "",
+            "waterStressCautions": "",
+            "phi": "",
+            "sourceStatus": clean_text(row[5]),
+        })
     return records
+
+
+def extract_recommendations(table: list[list[str]]) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for ordinal, row in enumerate(table[1:], start=1):
+        cells = [clean_text(cell) for cell in row]
+        if not any(cells):
+            continue
+        cells += [""] * (9 - len(cells))
+        source_id = cells[0] or str(ordinal)
+        records.append({
+            "id": f"recommendation-{source_id}",
+            "crop": cells[1],
+            "target": cells[2],
+            "recommendedPesticides": cells[3],
+            "formulation": cells[4],
+            "dose": cells[5],
+            "timing": cells[6],
+            "sourceNotes": cells[7],
+            "pdfPage": cells[8],
+        })
+    return records
+
+
+def write_chunked_asset(records: list[dict[str, object]], assets_dir: Path, prefix: str) -> list[Path]:
+    raw = (json.dumps(records, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+    encoded = base64.b64encode(compressed).decode("ascii")
+
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for stale in assets_dir.glob(f"{prefix}.b64.*"):
+        stale.unlink()
+
+    paths: list[Path] = []
+    for index, offset in enumerate(range(0, len(encoded), CHUNK_SIZE), start=1):
+        path = assets_dir / f"{prefix}.b64.{index:03d}"
+        path.write_text(encoded[offset:offset + CHUNK_SIZE], encoding="ascii")
+        paths.append(path)
+    return paths
 
 
 def main() -> int:
     if len(sys.argv) not in (2, 3):
-        print("Usage: import_docx.py SOURCE.docx [OUTPUT.json]", file=sys.stderr)
+        print("Usage: import_docx.py SOURCE.docx [ASSETS_DIR]", file=sys.stderr)
         return 2
 
     source = Path(sys.argv[1])
-    output = Path(sys.argv[2]) if len(sys.argv) == 3 else Path("app/src/main/assets/pesticides.json")
+    assets_dir = Path(sys.argv[2]) if len(sys.argv) == 3 else Path("app/src/main/assets")
 
-    if not source.exists():
-        print(f"Source file not found: {source}", file=sys.stderr)
-        return 2
-    if source.suffix.lower() != ".docx":
-        print("Source must be a .docx file", file=sys.stderr)
+    if not source.exists() or source.suffix.lower() != ".docx":
+        print(f"Canonical DOCX not found: {source}", file=sys.stderr)
         return 2
 
     try:
-        records = extract_records(source)
-    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
-        print(f"Could not read DOCX: {exc}", file=sys.stderr)
-        return 1
-
-    if not records:
-        print(
-            "No pesticide records were found in recognized Word tables. "
-            "Inspect the document headings and extend FIELD_ALIASES if needed.",
-            file=sys.stderr,
+        tables = read_tables(source)
+        catalog_table = find_table(
+            tables,
+            ["ردیف و نام عمومی/علمی", "طبقه، نام تجاری و فرمولاسیون", "نحوه اثر و گروه مقاومت"]
         )
+        recommendation_table = find_table(
+            tables,
+            ["محصول", "آفت/بیماری/علف هرز", "آفت کش های توصیه شده", "دوز/میزان مصرف"]
+        )
+        catalog = extract_catalog(catalog_table)
+        recommendations = extract_recommendations(recommendation_table)
+    except (zipfile.BadZipFile, KeyError, ET.ParseError, ValueError) as exc:
+        print(f"Could not import canonical Word source: {exc}", file=sys.stderr)
         return 1
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    print(f"Imported {len(records)} records -> {output}")
+    if not catalog or not recommendations:
+        print("Canonical Word tables were found but yielded no data.", file=sys.stderr)
+        return 1
+
+    catalog_paths = write_chunked_asset(catalog, assets_dir, "pesticides")
+    recommendation_paths = write_chunked_asset(recommendations, assets_dir, "recommendations")
+
+    print(f"Imported {len(catalog)} active-ingredient/mixture records")
+    print(f"Imported {len(recommendations)} detailed recommendations")
+    print(f"Catalog chunks: {len(catalog_paths)}")
+    print(f"Recommendation chunks: {len(recommendation_paths)}")
     return 0
 
 
