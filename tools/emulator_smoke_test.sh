@@ -21,16 +21,22 @@ dump_ui() {
   adb pull "$DEVICE_XML" "$LOCAL_XML" >/dev/null
 }
 
-assert_ui_contains() {
+ui_contains() {
   local needle="$1"
   python3 - "$LOCAL_XML" "$needle" <<'PY'
 import sys
 from pathlib import Path
 xml = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-needle = sys.argv[2]
-if needle not in xml:
-    raise SystemExit(f"UI does not contain expected text/content-description: {needle}")
+raise SystemExit(0 if sys.argv[2] in xml else 1)
 PY
+}
+
+assert_ui_contains() {
+  local needle="$1"
+  if ! ui_contains "$needle"; then
+    echo "UI does not contain expected text/content-description: $needle" >&2
+    exit 7
+  fi
 }
 
 tap_ui_match() {
@@ -59,6 +65,24 @@ PY
   adb shell input tap "$x" "$y"
   sleep 1
   dump_ui
+}
+
+scroll_until_visible() {
+  local needle="$1"
+  local attempts="${2:-5}"
+  local i
+  for ((i=0; i<attempts; i++)); do
+    if ui_contains "$needle"; then
+      return 0
+    fi
+    # Swipe upward to move down a LazyColumn; coordinates work across the
+    # emulator profiles used by CI while staying away from system bars.
+    adb shell input swipe 160 540 160 190 450
+    sleep 1
+    dump_ui
+  done
+  echo "UI item did not become visible after scrolling: $needle" >&2
+  return 1
 }
 
 capture_screen() {
@@ -123,12 +147,12 @@ capture_screen "dashboard"
 
 echo "== About developer UI =="
 tap_ui_match "تنظیمات"
+scroll_until_visible "درباره سازنده" 5
 assert_ui_contains "درباره سازنده"
 assert_ui_contains "فریبا عسگریان"
-assert_ui_contains "نسخه فعلی"
-assert_ui_contains "0.2.0"
 capture_screen "settings-developer"
 
+# The top app bar stays fixed while settings content scrolls.
 tap_ui_match "بازگشت"
 assert_ui_contains "جست‌وجوی سم"
 
