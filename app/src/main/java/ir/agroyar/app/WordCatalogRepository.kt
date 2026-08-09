@@ -8,16 +8,12 @@ import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
 
 object WordCatalogRepository {
-    private val catalogChunks = listOf(
-        "pesticides.b64.001",
-        "pesticides.b64.002",
-        "pesticides.b64.003",
-        "pesticides.b64.004"
-    )
+    const val PREVIEW_RECORDS = 15
+    const val FULL_SOURCE_RECORDS = 347
+    private const val ASSET = "pesticides.preview.b64"
 
     fun load(context: Context): List<Pesticide> = runCatching {
-        val text = loadCompressedJson(context, catalogChunks)
-        val array = JSONArray(text)
+        val array = JSONArray(loadCompressedJson(context, ASSET))
         buildList {
             for (index in 0 until array.length()) {
                 add(array.getJSONObject(index).toPesticide(index))
@@ -25,16 +21,10 @@ object WordCatalogRepository {
         }
     }.getOrElse { emptyList() }
 
-    private fun loadCompressedJson(context: Context, chunkNames: List<String>): String {
-        val encoded = buildString {
-            chunkNames.forEach { name ->
-                append(
-                    context.assets.open(name)
-                        .bufferedReader(Charsets.US_ASCII)
-                        .use { it.readText().trim() }
-                )
-            }
-        }
+    private fun loadCompressedJson(context: Context, assetName: String): String {
+        val encoded = context.assets.open(assetName)
+            .bufferedReader(Charsets.US_ASCII)
+            .use { it.readText().filterNot(Char::isWhitespace) }
         val compressed = Base64.decode(encoded, Base64.DEFAULT)
         return GZIPInputStream(ByteArrayInputStream(compressed))
             .bufferedReader(Charsets.UTF_8)
