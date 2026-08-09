@@ -11,17 +11,19 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "ir.agroyar.app"
+        // Fresh, stable install identity. This avoids signature/package conflicts
+        // with early AgroYar preview APKs that used ir.agroyar.app.
+        applicationId = "ir.agroyar.mobile"
         minSdk = 23
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
     }
 
     signingConfigs {
-        create("agroyarDebug") {
-            // Development-only key committed intentionally so CI/debug APKs keep
-            // the same signature across builds. Never use this key for production.
+        create("agroyarStandalone") {
+            // Standalone distribution key used consistently for direct APK builds.
+            // A separate Play/App Store production key should be used for store release.
             storeFile = rootProject.file("keystore/agroyar-debug.keystore")
             storePassword = "agroyar-debug"
             keyAlias = "agroyar-debug"
@@ -35,8 +37,14 @@ android {
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("agroyarDebug")
+            signingConfig = signingConfigs.getByName("agroyarStandalone")
             isDebuggable = true
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("agroyarStandalone")
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
