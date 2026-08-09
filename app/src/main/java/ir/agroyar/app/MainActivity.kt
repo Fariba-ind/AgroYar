@@ -20,23 +20,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -58,10 +52,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -119,9 +111,9 @@ private fun AgroYarRoot() {
     val store = remember { SettingsStore(context) }
     var language by remember { mutableStateOf(store.language()) }
     var themeMode by remember { mutableStateOf(store.theme()) }
-    val systemDark = isSystemInDarkTheme()
+
     val dark = when (themeMode) {
-        ThemeMode.SYSTEM -> systemDark
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
@@ -132,7 +124,8 @@ private fun AgroYarRoot() {
         onPrimary = Color.White,
         secondary = Color(0xFF6B9F35),
         surface = Color(0xFFFCFDF7),
-        surfaceVariant = Color(0xFFEEF3E5)
+        surfaceVariant = Color(0xFFEEF3E5),
+        background = Color(0xFFF8FAF3)
     )
     val darkScheme = darkColorScheme(
         primary = Color(0xFF8BCB6D),
@@ -174,16 +167,16 @@ private fun AgroYarApp(
     onThemeChange: (ThemeMode) -> Unit
 ) {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    val t = Strings(language)
+    val t = remember(language) { Strings(language) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(t.appName, fontWeight = FontWeight.Bold) },
+                title = { Text(t.appName, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                 navigationIcon = {
                     if (screen !is Screen.Home) {
                         IconButton(onClick = { screen = Screen.Home }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = t.back)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t.back)
                         }
                     }
                 },
@@ -199,7 +192,10 @@ private fun AgroYarApp(
     ) { padding ->
         Box(Modifier.padding(padding)) {
             when (val current = screen) {
-                Screen.Home -> HomeScreen(t) { screen = Screen.Detail(it) }
+                Screen.Home -> AgroDashboard(
+                    language = language,
+                    onOpenPesticide = { screen = Screen.Detail(it) }
+                )
                 Screen.Settings -> SettingsScreen(
                     t = t,
                     language = language,
@@ -208,84 +204,6 @@ private fun AgroYarApp(
                     onThemeChange = onThemeChange
                 )
                 is Screen.Detail -> DetailScreen(current.pesticide, t)
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeScreen(t: Strings, onOpen: (Pesticide) -> Unit) {
-    val context = LocalContext.current
-    val catalog = remember { WordCatalogRepository.load(context) }
-    var query by remember { mutableStateOf("") }
-    val normalized = query.trim().lowercase()
-    val results = remember(normalized, catalog) {
-        if (normalized.isBlank()) catalog else catalog.filter { item ->
-            listOf(
-                item.scientificName,
-                item.tradeNames.joinToString(" "),
-                item.activeIngredient,
-                item.formulation,
-                item.category,
-                item.target,
-                item.registeredCrops,
-                item.modeOfAction
-            ).any { it.lowercase().contains(normalized) }
-        }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(t.searchIntro, style = MaterialTheme.typography.bodyLarge)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(t.searchHint) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            shape = RoundedCornerShape(18.dp)
-        )
-
-        Card(shape = RoundedCornerShape(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null)
-                Text(if (catalog.isEmpty()) t.wordSourcePending else t.wordSourceActive)
-            }
-        }
-
-        Text(t.results(results.size), fontWeight = FontWeight.SemiBold)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(results, key = { it.id }) { pesticide ->
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth().clickable { onOpen(pesticide) },
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            pesticide.scientificName.ifBlank { pesticide.tradeNames.firstOrNull().orEmpty() },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        if (pesticide.tradeNames.isNotEmpty()) {
-                            Text("${t.tradeName}: ${pesticide.tradeNames.joinToString()}")
-                        }
-                        if (pesticide.activeIngredient.isNotBlank()) {
-                            Text("${t.activeIngredient}: ${pesticide.activeIngredient}")
-                        }
-                        if (pesticide.formulation.isNotBlank()) {
-                            Text("${t.formulation}: ${pesticide.formulation}")
-                        }
-                    }
-                }
             }
         }
     }
@@ -492,19 +410,6 @@ private class Strings(private val appLanguage: AppLanguage) {
     val appName = choose("اگرویار", "AgroYar")
     val back = choose("بازگشت", "Back")
     val settings = choose("تنظیمات", "Settings")
-    val searchIntro = choose(
-        "نام علمی، نام تجاری، ماده مؤثره، فرمولاسیون، آفت یا محصول را جست‌وجو کنید.",
-        "Search by scientific name, trade name, active ingredient, formulation, target, or crop."
-    )
-    val searchHint = choose("جست‌وجوی سم", "Search pesticide")
-    val wordSourcePending = choose(
-        "بانک داده هنوز بارگذاری نشده است.",
-        "The data catalog has not been loaded yet."
-    )
-    val wordSourceActive = choose(
-        "بانک داده از فایل Word مرجع پروژه تولید شده است.",
-        "The catalog is generated from the project's canonical Word source."
-    )
     val activeIngredient = choose("ماده مؤثره", "Active ingredient")
     val tradeName = choose("نام تجاری", "Trade name")
     val concentration = choose("درصد/غلظت ماده مؤثره", "Active concentration")
@@ -522,8 +427,8 @@ private class Strings(private val appLanguage: AppLanguage) {
     val theme = choose("حالت نمایش", "Appearance")
     val dataSource = choose("منبع داده", "Data source")
     val wordSourceDescription = choose(
-        "فایل Word پروژه منبع مرجع بانک آفت‌کش‌ها است و برای جست‌وجوی سریع به داده ساختاریافته تبدیل می‌شود.",
-        "The project Word document is the canonical pesticide source and is converted to structured searchable data."
+        "فایل Word پروژه منبع مرجع بانک آفت‌کش‌ها و توصیه‌های مصرف است و برای جست‌وجوی سریع به داده ساختاریافته تبدیل می‌شود.",
+        "The project Word document is the canonical source for pesticides and use recommendations and is converted to structured searchable data."
     )
     val update = choose("به‌روزرسانی برنامه", "App update")
     val currentVersion = choose("نسخه فعلی", "Current version")
@@ -543,7 +448,6 @@ private class Strings(private val appLanguage: AppLanguage) {
         "Safety: verify field-use rates, registrations, PHI and restrictions against the current product label and official sources."
     )
 
-    fun results(count: Int) = choose("نتایج: $count", "Results: $count")
     fun updateAvailable(version: String) = choose("نسخه جدید $version موجود است.", "Version $version is available.")
 
     fun themeLabel(mode: ThemeMode) = when (mode) {
