@@ -32,33 +32,39 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Lint, test, and build debug APK
-        run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Lint, test, and build standalone release APK
+        run: gradle :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
-      - name: Verify APK archive and signing
+      - name: Verify APK archive, manifest, and signing
         shell: bash
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           unzip -tq "$APK"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          if [[ -z "$APKSIGNER" ]]; then
-            echo "apksigner was not found in Android build-tools" >&2
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          if [[ -z "$APKSIGNER" || -z "$AAPT" ]]; then
+            echo "Android build tools were not found" >&2
             exit 1
           fi
           VERIFY_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$APK")"
           echo "$VERIFY_OUTPUT"
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v1 scheme.*true'
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v2 scheme.*true'
-          echo "$VERIFY_OUTPUT" | grep -q 'AgroYar Debug'
+          BADGING="$($AAPT dump badging "$APK")"
+          echo "$BADGING" | head -20
+          echo "$BADGING" | grep -q "package: name='ir.agroyar.mobile'"
+          echo "$BADGING" | grep -q "versionCode='3'"
+          echo "$BADGING" | grep -q "versionName='0.2.1'"
+          echo "$BADGING" | grep -q "sdkVersion:'23'"
           sha256sum "$APK"
 
-      - name: Upload debug APK
+      - name: Upload standalone release APK
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: AgroYar-0.2.1-standalone-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
   emulator-smoke:
@@ -76,7 +82,7 @@ jobs:
       - name: Download built APK
         uses: actions/download-artifact@v4
         with:
-          name: AgroYar-debug-apk
+          name: AgroYar-0.2.1-standalone-apk
           path: artifacts
 
       - name: Enable KVM
@@ -85,7 +91,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install and run AgroYar on emulator
+      - name: Install and run AgroYar standalone release on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -93,12 +99,12 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash tools/emulator_smoke_test.sh artifacts/app-debug.apk
+          script: bash tools/emulator_smoke_test.sh artifacts/app-release.apk
 
       - name: Upload smoke diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-smoke-api-${{ matrix.api-level }}
+          name: AgroYar-standalone-smoke-api-${{ matrix.api-level }}
           path: build/smoke
           if-no-files-found: ignore
