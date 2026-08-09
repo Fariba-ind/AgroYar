@@ -1,0 +1,493 @@
+package ir.agroyar.app
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalLayoutDirection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { AgroYarRoot() }
+    }
+}
+
+enum class AppLanguage { FA, EN }
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+data class Pesticide(
+    val id: String,
+    val scientificName: String,
+    val tradeNames: List<String>,
+    val activeIngredient: String,
+    val concentration: String,
+    val formulation: String,
+    val category: String,
+    val target: String,
+    val modeOfAction: String,
+    val registeredCrops: String,
+    val doseGuidance: String,
+    val restrictions: String,
+    val weatherCautions: String,
+    val waterStressCautions: String,
+    val phi: String,
+    val sourceStatus: String
+)
+
+private object DemoCatalog {
+    val items = listOf(
+        Pesticide(
+            id = "imidacloprid-demo",
+            scientificName = "Imidacloprid",
+            tradeNames = listOf("Demo trade name"),
+            activeIngredient = "Imidacloprid",
+            concentration = "Example only — verify registered label",
+            formulation = "Example: SC / WG depending on product",
+            category = "Insecticide",
+            target = "Sucking insects — registration varies by crop and country",
+            modeOfAction = "Nicotinic acetylcholine receptor competitive modulator; IRAC Group 4A.",
+            registeredCrops = "Not yet populated. Must be imported from an authoritative local registration source.",
+            doseGuidance = "Dose intentionally withheld in the demo dataset. Use only the legally registered product label for crop-specific rate, spray volume, PHI and REI.",
+            restrictions = "Do not infer crop registration from the active ingredient alone. Observe pollinator, aquatic and label restrictions.",
+            weatherCautions = "Follow product-label limits for wind, rainfall, temperature and drift control.",
+            waterStressCautions = "Avoid application where the product label prohibits treatment of drought- or otherwise stressed crops.",
+            phi = "Verify product-specific registered label.",
+            sourceStatus = "Schema/demo record — not field-use guidance"
+        ),
+        Pesticide(
+            id = "glyphosate-demo",
+            scientificName = "Glyphosate",
+            tradeNames = listOf("Demo trade name"),
+            activeIngredient = "Glyphosate",
+            concentration = "Example only — product salts/concentrations vary",
+            formulation = "Example: SL",
+            category = "Herbicide",
+            target = "Broad-spectrum weed control; legal uses vary by jurisdiction and product",
+            modeOfAction = "EPSP synthase inhibitor; HRAC/WSSA Group 9.",
+            registeredCrops = "Not yet populated. Crop/site uses must come from the exact registered product label.",
+            doseGuidance = "Dose intentionally withheld in the demo dataset. Different salts and concentrations are not interchangeable without label-based conversion.",
+            restrictions = "Non-selective herbicide. Prevent contact with susceptible crop tissue unless the exact registered use allows it.",
+            weatherCautions = "Use label directions for rainfast period, wind, temperature, inversion and drift restrictions.",
+            waterStressCautions = "Weed stress can alter performance; follow the exact registered label and local agronomic guidance.",
+            phi = "Verify product-specific registered label.",
+            sourceStatus = "Schema/demo record — not field-use guidance"
+        )
+    )
+}
+
+private class SettingsStore(context: Context) {
+    private val prefs = context.getSharedPreferences("agroyar_settings", Context.MODE_PRIVATE)
+
+    fun language(): AppLanguage = runCatching {
+        AppLanguage.valueOf(prefs.getString("language", AppLanguage.FA.name) ?: AppLanguage.FA.name)
+    }.getOrDefault(AppLanguage.FA)
+
+    fun theme(): ThemeMode = runCatching {
+        ThemeMode.valueOf(prefs.getString("theme", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
+    }.getOrDefault(ThemeMode.SYSTEM)
+
+    fun saveLanguage(value: AppLanguage) = prefs.edit().putString("language", value.name).apply()
+    fun saveTheme(value: ThemeMode) = prefs.edit().putString("theme", value.name).apply()
+}
+
+@Composable
+private fun AgroYarRoot() {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
+    var language by remember { mutableStateOf(store.language()) }
+    var themeMode by remember { mutableStateOf(store.theme()) }
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dark = when (themeMode) {
+        ThemeMode.SYSTEM -> systemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+    val scheme = if (dark) darkColorScheme() else lightColorScheme()
+    val direction = if (language == AppLanguage.FA) LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+        MaterialTheme(colorScheme = scheme) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                AgroYarApp(
+                    language = language,
+                    themeMode = themeMode,
+                    onLanguageChange = {
+                        language = it
+                        store.saveLanguage(it)
+                    },
+                    onThemeChange = {
+                        themeMode = it
+                        store.saveTheme(it)
+                    }
+                )
+            }
+        }
+    }
+}
+
+private sealed interface Screen {
+    data object Home : Screen
+    data object Settings : Screen
+    data class Detail(val pesticide: Pesticide) : Screen
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgroYarApp(
+    language: AppLanguage,
+    themeMode: ThemeMode,
+    onLanguageChange: (AppLanguage) -> Unit,
+    onThemeChange: (ThemeMode) -> Unit
+) {
+    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    val t = Strings(language)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(t.appName, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    if (screen !is Screen.Home) {
+                        IconButton(onClick = { screen = Screen.Home }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = t.back)
+                        }
+                    }
+                },
+                actions = {
+                    if (screen is Screen.Home) {
+                        IconButton(onClick = { screen = Screen.Settings }) {
+                            Icon(Icons.Default.Settings, contentDescription = t.settings)
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(Modifier.padding(padding)) {
+            when (val current = screen) {
+                Screen.Home -> HomeScreen(t) { screen = Screen.Detail(it) }
+                Screen.Settings -> SettingsScreen(
+                    t = t,
+                    language = language,
+                    themeMode = themeMode,
+                    onLanguageChange = onLanguageChange,
+                    onThemeChange = onThemeChange
+                )
+                is Screen.Detail -> DetailScreen(current.pesticide, t)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeScreen(t: Strings, onOpen: (Pesticide) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val normalized = query.trim().lowercase()
+    val results = remember(normalized) {
+        if (normalized.isBlank()) DemoCatalog.items else DemoCatalog.items.filter { item ->
+            listOf(
+                item.scientificName,
+                item.tradeNames.joinToString(" "),
+                item.activeIngredient,
+                item.formulation,
+                item.category
+            ).any { it.lowercase().contains(normalized) }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(t.searchIntro, style = MaterialTheme.typography.bodyLarge)
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(t.searchHint) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+        )
+
+        AssistChip(
+            onClick = {},
+            enabled = false,
+            label = { Text(t.demoWarning) },
+            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
+        )
+
+        Text(t.results(results.size), fontWeight = FontWeight.SemiBold)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(results, key = { it.id }) { pesticide ->
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpen(pesticide) }
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(pesticide.scientificName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("${t.activeIngredient}: ${pesticide.activeIngredient}")
+                        Text("${t.formulation}: ${pesticide.formulation}")
+                        Text("${t.category}: ${pesticide.category}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailScreen(item: Pesticide, t: Strings) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(item.scientificName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(item.sourceStatus, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+        }
+        detailItem(t.tradeName, item.tradeNames.joinToString())
+        detailItem(t.activeIngredient, item.activeIngredient)
+        detailItem(t.concentration, item.concentration)
+        detailItem(t.formulation, item.formulation)
+        detailItem(t.category, item.category)
+        detailItem(t.target, item.target)
+        detailItem(t.modeOfAction, item.modeOfAction)
+        detailItem(t.registeredCrops, item.registeredCrops)
+        detailItem(t.dose, item.doseGuidance)
+        detailItem(t.restrictions, item.restrictions)
+        detailItem(t.weather, item.weatherCautions)
+        detailItem(t.waterStress, item.waterStressCautions)
+        detailItem(t.phi, item.phi)
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.detailItem(title: String, value: String) {
+    item {
+        Card(shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(value)
+            }
+        }
+    }
+}
+
+private sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Loading : UpdateState
+    data class Result(val message: String, val url: String? = null) : UpdateState
+}
+
+@Composable
+private fun SettingsScreen(
+    t: Strings,
+    language: AppLanguage,
+    themeMode: ThemeMode,
+    onLanguageChange: (AppLanguage) -> Unit,
+    onThemeChange: (ThemeMode) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        item {
+            SettingSection(t.language) {
+                SegmentedButtonRow {
+                    AppLanguage.entries.forEachIndexed { index, value ->
+                        SegmentedButton(
+                            selected = language == value,
+                            onClick = { onLanguageChange(value) },
+                            shape = SegmentedButtonDefaults.itemShape(index, AppLanguage.entries.size)
+                        ) {
+                            Text(if (value == AppLanguage.FA) "فارسی" else "English")
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            SettingSection(t.theme) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ThemeMode.entries.forEach { value ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { onThemeChange(value) }.padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = themeMode == value, onClick = { onThemeChange(value) })
+                            Text(t.themeLabel(value))
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            SettingSection(t.update) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${t.currentVersion}: ${BuildConfig.VERSION_NAME}")
+                    Button(
+                        enabled = updateState !is UpdateState.Loading,
+                        onClick = {
+                            updateState = UpdateState.Loading
+                            scope.launch {
+                                updateState = checkForUpdate(t)
+                            }
+                        }
+                    ) {
+                        if (updateState is UpdateState.Loading) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(t.checkUpdate)
+                    }
+                    val result = updateState as? UpdateState.Result
+                    if (result != null) {
+                        Text(result.message)
+                        if (result.url != null) {
+                            TextButton(onClick = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.url)))
+                            }) { Text(t.openRelease) }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text(t.dataNotice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SettingSection(title: String, content: @Composable () -> Unit) {
+    Card {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
+private suspend fun checkForUpdate(t: Strings): UpdateState.Result = withContext(Dispatchers.IO) {
+    try {
+        val connection = (URL("https://api.github.com/repos/Fariba-ind/AgroYar/releases/latest").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8_000
+            readTimeout = 8_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "AgroYar-Android")
+        }
+        if (connection.responseCode == 404) {
+            connection.disconnect()
+            return@withContext UpdateState.Result(t.noRelease)
+        }
+        if (connection.responseCode !in 200..299) {
+            connection.disconnect()
+            return@withContext UpdateState.Result(t.updateError)
+        }
+        val body = connection.inputStream.bufferedReader().use { it.readText() }
+        connection.disconnect()
+        val json = JSONObject(body)
+        val latest = json.optString("tag_name").removePrefix("v")
+        val page = json.optString("html_url").takeIf { it.startsWith("https://") }
+        if (latest.isBlank()) return@withContext UpdateState.Result(t.updateError)
+
+        val comparison = compareVersions(latest, BuildConfig.VERSION_NAME)
+        if (comparison > 0) UpdateState.Result(t.updateAvailable(latest), page)
+        else UpdateState.Result(t.upToDate)
+    } catch (_: Exception) {
+        UpdateState.Result(t.updateError)
+    }
+}
+
+private fun compareVersions(a: String, b: String): Int {
+    val left = a.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+    val right = b.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+    val size = maxOf(left.size, right.size)
+    for (i in 0 until size) {
+        val x = left.getOrElse(i) { 0 }
+        val y = right.getOrElse(i) { 0 }
+        if (x != y) return x.compareTo(y)
+    }
+    return 0
+}
+
+private class Strings(private val language: AppLanguage) {
+    private fun choose(fa: String, en: String) = if (language == AppLanguage.FA) fa else en
+
+    val appName = choose("اگرویار", "AgroYar")
+    val back = choose("بازگشت", "Back")
+    val settings = choose("تنظیمات", "Settings")
+    val searchIntro = choose("نام علمی، نام تجاری، ماده مؤثره یا نوع فرمولاسیون را جست‌وجو کنید.", "Search by scientific name, trade name, active ingredient, or formulation.")
+    val searchHint = choose("جست‌وجوی سم", "Search pesticide")
+    val demoWarning = choose("داده‌های فعلی نمونه‌اند و برای مصرف مزرعه‌ای نیستند", "Current records are demo data, not field-use directions")
+    val activeIngredient = choose("ماده مؤثره", "Active ingredient")
+    val tradeName = choose("نام تجاری", "Trade name")
+    val concentration = choose("درصد/غلظت ماده مؤثره", "Active concentration")
+    val formulation = choose("فرمولاسیون", "Formulation")
+    val category = choose("گروه", "Category")
+    val target = choose("هدف مصرف", "Target")
+    val modeOfAction = choose("نحوه اثر", "Mode of action")
+    val registeredCrops = choose("محصولات مجاز", "Registered crops")
+    val dose = choose("دُز و نحوه مصرف", "Dose and application")
+    val restrictions = choose("محدودیت‌ها و منع مصرف", "Restrictions")
+    val weather = choose("شرایط آب‌وهوایی", "Weather cautions")
+    val waterStress = choose("تنش آبی", "Water-stress cautions")
+    val phi = choose("فاصله تا برداشت (PHI)", "Pre-harvest interval (PHI)")
+    val language = choose("زبان", "Language")
+    val theme = choose("حالت نمایش", "Appearance")
+    val update = choose("به‌روزرسانی برنامه", "App update")
+    val currentVersion = choose("نسخه فعلی", "Current version")
+    val checkUpdate = choose("بررسی نسخه جدید", "Check for updates")
+    val openRelease = choose("باز کردن صفحه نسخه", "Open release page")
+    val noRelease = choose("هنوز نسخه رسمی در GitHub Releases منتشر نشده است.", "No official GitHub Release has been published yet.")
+    val updateError = choose("بررسی نسخه انجام نشد. اتصال اینترنت یا GitHub را بررسی کنید.", "Could not check for updates. Check internet/GitHub access.")
+    val upToDate = choose("برنامه به‌روز است.", "The app is up to date.")
+    val dataNotice = choose(
+        "نکته ایمنی: دُز، ثبت محصول، دوره کارنس و محدودیت‌های سم باید از برچسب رسمی همان فرآورده و منبع قانونی منطقه استخراج شود.",
+        "Safety: dose, crop registration, PHI and restrictions must come from the exact product label and authoritative local regulatory source."
+    )
+
+    fun results(count: Int) = choose("نتایج: $count", "Results: $count")
+    fun updateAvailable(version: String) = choose("نسخه جدید $version موجود است.", "Version $version is available.")
+    fun themeLabel(mode: ThemeMode) = when (mode) {
+        ThemeMode.SYSTEM -> choose("بر اساس تنظیمات گوشی", "Use system setting")
+        ThemeMode.LIGHT -> choose("روشن", "Light")
+        ThemeMode.DARK -> choose("تیره", "Dark")
+    }
+}
