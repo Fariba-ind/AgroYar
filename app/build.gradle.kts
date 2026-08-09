@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -11,19 +10,15 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // Fresh, stable install identity. This avoids signature/package conflicts
-        // with early AgroYar preview APKs that used ir.agroyar.app.
         applicationId = "ir.agroyar.mobile"
-        minSdk = 23
+        minSdk = 21
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
     }
 
     signingConfigs {
         create("agroyarStandalone") {
-            // Standalone distribution key used consistently for direct APK builds.
-            // A separate Play/App Store production key should be used for store release.
             storeFile = rootProject.file("keystore/agroyar-debug.keystore")
             storePassword = "agroyar-debug"
             keyAlias = "agroyar-debug"
@@ -49,7 +44,6 @@ android {
     }
 
     buildFeatures {
-        compose = true
         buildConfig = true
     }
 
@@ -67,16 +61,4 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
-}
-
-dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
-    implementation("androidx.activity:activity-compose:1.12.3")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    debugImplementation("androidx.compose.ui:ui-tooling")
 }
