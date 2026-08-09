@@ -24,13 +24,16 @@ adb install "$APK"
 adb install -r "$APK"
 
 echo "== Package metadata =="
-adb shell dumpsys package "$PACKAGE" | grep -E 'versionCode=|versionName=|minSdk=|targetSdk=' | head -10
+adb shell dumpsys package "$PACKAGE" | grep -E 'versionCode=|versionName=|minSdk=|targetSdk=' | head -10 || true
 
 echo "== Launch =="
 adb logcat -c
 START_OUTPUT="$(adb shell am start -W -n "$SPLASH")"
 echo "$START_OUTPUT"
-echo "$START_OUTPUT" | grep -q 'Status: ok'
+if [[ "$START_OUTPUT" != *"Status: ok"* ]]; then
+  echo "SplashActivity did not launch successfully." >&2
+  exit 3
+fi
 
 # Splash animation lasts about 2.7 seconds; allow MainActivity to settle.
 sleep 5
@@ -39,24 +42,25 @@ PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
 if [[ -z "$PID" ]]; then
   echo "AgroYar process is not running after launch." >&2
   adb logcat -d -v threadtime | tail -300 >&2
-  exit 3
+  exit 4
 fi
 
 echo "PID=$PID"
 
 ACTIVITY_DUMP="$(adb shell dumpsys activity activities)"
-echo "$ACTIVITY_DUMP" | grep -E "mResumedActivity|topResumedActivity|$PACKAGE" | head -40 || true
-if ! echo "$ACTIVITY_DUMP" | grep -q "$MAIN"; then
+printf '%s\n' "$ACTIVITY_DUMP" | grep -E "mResumedActivity|topResumedActivity|$PACKAGE" | head -40 || true
+if [[ "$ACTIVITY_DUMP" != *"$MAIN"* ]]; then
   echo "MainActivity was not found after the splash transition." >&2
   adb logcat -d -v threadtime | tail -300 >&2
-  exit 4
+  exit 5
 fi
 
 echo "== Runtime crash scan =="
 LOGS="$(adb logcat -d -v threadtime)"
-if echo "$LOGS" | grep -E 'FATAL EXCEPTION|ANR in ir\.agroyar\.app|Process: ir\.agroyar\.app' >/tmp/agroyar-crash-lines.txt; then
-  cat /tmp/agroyar-crash-lines.txt >&2
-  exit 5
+CRASH_LINES="$(grep -E 'FATAL EXCEPTION|ANR in ir\.agroyar\.app|Process: ir\.agroyar\.app' <<<"$LOGS" || true)"
+if [[ -n "$CRASH_LINES" ]]; then
+  printf '%s\n' "$CRASH_LINES" >&2
+  exit 6
 fi
 
 mkdir -p build/smoke
