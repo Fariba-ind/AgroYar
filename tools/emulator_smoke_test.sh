@@ -5,21 +5,24 @@ APK="${1:-app/build/outputs/apk/release/app-release.apk}"
 PACKAGE="ir.agroyar.mobile"
 MAIN="ir.agroyar.app.MainActivity"
 SMOKE_DIR="build/smoke"
-DEVICE_XML="/sdcard/window_dump.xml"
 LOCAL_XML="$SMOKE_DIR/window.xml"
 mkdir -p "$SMOKE_DIR"
 
 test -s "$APK" || { echo "APK not found: $APK" >&2; exit 2; }
 
 dump_ui() {
-  adb shell rm -f "$DEVICE_XML" >/dev/null 2>&1 || true
-  adb shell uiautomator dump >/tmp/uia-dump.txt 2>&1 || true
-  cat /tmp/uia-dump.txt || true
-  for _ in 1 2 3 4 5; do
-    if adb shell test -f "$DEVICE_XML" >/dev/null 2>&1; then break; fi
-    sleep 1
+  local output detected candidate
+  output="$(adb shell uiautomator dump 2>&1 || true)"
+  printf '%s\n' "$output"
+  detected="$(printf '%s\n' "$output" | sed -n 's/.*dumped to: //p' | tr -d '\r' | tail -1)"
+  for candidate in "$detected" /sdcard/window_dump.xml /storage/sdcard/window_dump.xml /storage/emulated/0/window_dump.xml; do
+    [[ -n "$candidate" ]] || continue
+    if adb pull "$candidate" "$LOCAL_XML" >/dev/null 2>&1; then
+      return 0
+    fi
   done
-  adb pull "$DEVICE_XML" "$LOCAL_XML" >/dev/null
+  echo "Could not retrieve UIAutomator hierarchy" >&2
+  return 1
 }
 
 ui_contains() {
