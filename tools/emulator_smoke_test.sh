@@ -5,14 +5,20 @@ APK="${1:-app/build/outputs/apk/release/app-release.apk}"
 PACKAGE="ir.agroyar.mobile"
 MAIN="ir.agroyar.app.MainActivity"
 SMOKE_DIR="build/smoke"
-DEVICE_XML="/sdcard/agroyar-window.xml"
+DEVICE_XML="/sdcard/window_dump.xml"
 LOCAL_XML="$SMOKE_DIR/window.xml"
 mkdir -p "$SMOKE_DIR"
 
 test -s "$APK" || { echo "APK not found: $APK" >&2; exit 2; }
 
 dump_ui() {
-  adb shell uiautomator dump "$DEVICE_XML" >/dev/null 2>&1
+  adb shell rm -f "$DEVICE_XML" >/dev/null 2>&1 || true
+  adb shell uiautomator dump >/tmp/uia-dump.txt 2>&1 || true
+  cat /tmp/uia-dump.txt || true
+  for _ in 1 2 3 4 5; do
+    if adb shell test -f "$DEVICE_XML" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
   adb pull "$DEVICE_XML" "$LOCAL_XML" >/dev/null
 }
 
