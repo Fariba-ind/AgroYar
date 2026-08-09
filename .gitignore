@@ -8,3 +8,7 @@
 .externalNativeBuild/
 .cxx/
 app/build/
+
+# Canonical Word source is supplied locally and converted to JSON.
+data/source/*.docx
+!data/source/README.md
