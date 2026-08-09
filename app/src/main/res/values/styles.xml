@@ -15,6 +15,5 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">#EEF0C7</item>
         <item name="android:navigationBarColor">#2A7337</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
