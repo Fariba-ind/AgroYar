@@ -5,10 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,12 +32,73 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Lint, test, and build debug APK
+        run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace
+
+      - name: Verify APK archive and signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -tq "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          if [[ -z "$APKSIGNER" ]]; then
+            echo "apksigner was not found in Android build-tools" >&2
+            exit 1
+          fi
+          VERIFY_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$APK")"
+          echo "$VERIFY_OUTPUT"
+          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v1 scheme.*true'
+          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v2 scheme.*true'
+          echo "$VERIFY_OUTPUT" | grep -q 'AgroYar Debug'
+          sha256sum "$APK"
 
       - name: Upload debug APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: AgroYar-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  emulator-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [23, 35]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download built APK
+        uses: actions/download-artifact@v4
+        with:
+          name: AgroYar-debug-apk
+          path: artifacts
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install and run AgroYar on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tools/emulator_smoke_test.sh artifacts/app-debug.apk
+
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgroYar-smoke-api-${{ matrix.api-level }}
+          path: build/smoke
+          if-no-files-found: ignore
