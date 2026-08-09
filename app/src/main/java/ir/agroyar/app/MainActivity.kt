@@ -54,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -126,8 +127,20 @@ private fun AgroYarRoot() {
     }
     val direction = if (language == AppLanguage.FA) LayoutDirection.Rtl else LayoutDirection.Ltr
 
+    val lightScheme = lightColorScheme(
+        primary = Color(0xFF2E7D32),
+        onPrimary = Color.White,
+        secondary = Color(0xFF6B9F35),
+        surface = Color(0xFFFCFDF7),
+        surfaceVariant = Color(0xFFEEF3E5)
+    )
+    val darkScheme = darkColorScheme(
+        primary = Color(0xFF8BCB6D),
+        secondary = Color(0xFFA7D47E)
+    )
+
     CompositionLocalProvider(LocalLayoutDirection provides direction) {
-        MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
+        MaterialTheme(colorScheme = if (dark) darkScheme else lightScheme) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 AgroYarApp(
                     language = language,
@@ -207,20 +220,17 @@ private fun HomeScreen(t: Strings, onOpen: (Pesticide) -> Unit) {
     var query by remember { mutableStateOf("") }
     val normalized = query.trim().lowercase()
     val results = remember(normalized, catalog) {
-        if (normalized.isBlank()) {
-            catalog
-        } else {
-            catalog.filter { item ->
-                listOf(
-                    item.scientificName,
-                    item.tradeNames.joinToString(" "),
-                    item.activeIngredient,
-                    item.formulation,
-                    item.category,
-                    item.target,
-                    item.registeredCrops
-                ).any { it.lowercase().contains(normalized) }
-            }
+        if (normalized.isBlank()) catalog else catalog.filter { item ->
+            listOf(
+                item.scientificName,
+                item.tradeNames.joinToString(" "),
+                item.activeIngredient,
+                item.formulation,
+                item.category,
+                item.target,
+                item.registeredCrops,
+                item.modeOfAction
+            ).any { it.lowercase().contains(normalized) }
         }
     }
 
@@ -236,10 +246,11 @@ private fun HomeScreen(t: Strings, onOpen: (Pesticide) -> Unit) {
             label = { Text(t.searchHint) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            shape = RoundedCornerShape(18.dp)
         )
 
-        Card {
+        Card(shape = RoundedCornerShape(18.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -254,13 +265,15 @@ private fun HomeScreen(t: Strings, onOpen: (Pesticide) -> Unit) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(results, key = { it.id }) { pesticide ->
                 ElevatedCard(
-                    modifier = Modifier.fillMaxWidth().clickable { onOpen(pesticide) }
+                    modifier = Modifier.fillMaxWidth().clickable { onOpen(pesticide) },
+                    shape = RoundedCornerShape(18.dp)
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(
                             pesticide.scientificName.ifBlank { pesticide.tradeNames.firstOrNull().orEmpty() },
                             fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.primary
                         )
                         if (pesticide.tradeNames.isNotEmpty()) {
                             Text("${t.tradeName}: ${pesticide.tradeNames.joinToString()}")
@@ -288,7 +301,8 @@ private fun DetailScreen(item: Pesticide, t: Strings) {
             Text(
                 item.scientificName.ifBlank { item.tradeNames.firstOrNull().orEmpty() },
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
             if (item.sourceStatus.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
@@ -319,7 +333,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.detailItem(title: Str
                 Modifier.fillMaxWidth().padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Text(title, fontWeight = FontWeight.Bold)
+                Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text(value)
             }
         }
@@ -350,33 +364,19 @@ private fun SettingsScreen(
     ) {
         item {
             SettingSection(t.language) {
-                ChoiceRow(
-                    label = "فارسی",
-                    selected = language == AppLanguage.FA,
-                    onClick = { onLanguageChange(AppLanguage.FA) }
-                )
-                ChoiceRow(
-                    label = "English",
-                    selected = language == AppLanguage.EN,
-                    onClick = { onLanguageChange(AppLanguage.EN) }
-                )
+                ChoiceRow("فارسی", language == AppLanguage.FA) { onLanguageChange(AppLanguage.FA) }
+                ChoiceRow("English", language == AppLanguage.EN) { onLanguageChange(AppLanguage.EN) }
             }
         }
         item {
             SettingSection(t.theme) {
                 ThemeMode.entries.forEach { value ->
-                    ChoiceRow(
-                        label = t.themeLabel(value),
-                        selected = themeMode == value,
-                        onClick = { onThemeChange(value) }
-                    )
+                    ChoiceRow(t.themeLabel(value), themeMode == value) { onThemeChange(value) }
                 }
             }
         }
         item {
-            SettingSection(t.dataSource) {
-                Text(t.wordSourceDescription)
-            }
+            SettingSection(t.dataSource) { Text(t.wordSourceDescription) }
         }
         item {
             SettingSection(t.update) {
@@ -401,9 +401,7 @@ private fun SettingsScreen(
                         if (result.url != null) {
                             TextButton(onClick = {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.url)))
-                            }) {
-                                Text(t.openRelease)
-                            }
+                            }) { Text(t.openRelease) }
                         }
                     }
                 }
@@ -432,7 +430,7 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun SettingSection(title: String, content: @Composable () -> Unit) {
-    Card {
+    Card(shape = RoundedCornerShape(18.dp)) {
         Column(
             Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -445,10 +443,8 @@ private fun SettingSection(title: String, content: @Composable () -> Unit) {
 
 private suspend fun checkForUpdate(t: Strings): UpdateState.Result = withContext(Dispatchers.IO) {
     try {
-        val connection = (
-            URL("https://api.github.com/repos/Fariba-ind/AgroYar/releases/latest")
-                .openConnection() as HttpURLConnection
-            ).apply {
+        val connection = (URL("https://api.github.com/repos/Fariba-ind/AgroYar/releases/latest")
+            .openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8_000
             readTimeout = 8_000
@@ -472,9 +468,7 @@ private suspend fun checkForUpdate(t: Strings): UpdateState.Result = withContext
 
         if (compareVersions(latest, BuildConfig.VERSION_NAME) > 0) {
             UpdateState.Result(t.updateAvailable(latest), page)
-        } else {
-            UpdateState.Result(t.upToDate)
-        }
+        } else UpdateState.Result(t.upToDate)
     } catch (_: Exception) {
         UpdateState.Result(t.updateError)
     }
@@ -492,8 +486,8 @@ private fun compareVersions(a: String, b: String): Int {
     return 0
 }
 
-private class Strings(private val language: AppLanguage) {
-    private fun choose(fa: String, en: String) = if (language == AppLanguage.FA) fa else en
+private class Strings(private val appLanguage: AppLanguage) {
+    private fun choose(fa: String, en: String) = if (appLanguage == AppLanguage.FA) fa else en
 
     val appName = choose("اگرویار", "AgroYar")
     val back = choose("بازگشت", "Back")
@@ -504,11 +498,11 @@ private class Strings(private val language: AppLanguage) {
     )
     val searchHint = choose("جست‌وجوی سم", "Search pesticide")
     val wordSourcePending = choose(
-        "منبع Word هنوز وارد کاتالوگ نشده است؛ داده ساختگی نمایش داده نمی‌شود.",
-        "The Word source has not been imported yet; no fabricated records are shown."
+        "بانک داده هنوز بارگذاری نشده است.",
+        "The data catalog has not been loaded yet."
     )
     val wordSourceActive = choose(
-        "کاتالوگ از فایل Word مرجع پروژه تولید شده است.",
+        "بانک داده از فایل Word مرجع پروژه تولید شده است.",
         "The catalog is generated from the project's canonical Word source."
     )
     val activeIngredient = choose("ماده مؤثره", "Active ingredient")
@@ -528,8 +522,8 @@ private class Strings(private val language: AppLanguage) {
     val theme = choose("حالت نمایش", "Appearance")
     val dataSource = choose("منبع داده", "Data source")
     val wordSourceDescription = choose(
-        "فایل Word پروژه منبع مرجع است و هنگام آماده‌سازی نسخه برنامه به JSON قابل‌جست‌وجو تبدیل می‌شود.",
-        "The project Word document is the canonical source and is converted into searchable JSON for the app."
+        "فایل Word پروژه منبع مرجع بانک آفت‌کش‌ها است و برای جست‌وجوی سریع به داده ساختاریافته تبدیل می‌شود.",
+        "The project Word document is the canonical pesticide source and is converted to structured searchable data."
     )
     val update = choose("به‌روزرسانی برنامه", "App update")
     val currentVersion = choose("نسخه فعلی", "Current version")
@@ -545,15 +539,12 @@ private class Strings(private val language: AppLanguage) {
     )
     val upToDate = choose("برنامه به‌روز است.", "The app is up to date.")
     val dataNotice = choose(
-        "نکته ایمنی: دُز، ثبت محصول، دوره کارنس و محدودیت‌ها باید دقیقاً از منبع معتبر ثبت‌شده در فایل Word و برچسب رسمی همان فرآورده استخراج شده باشند.",
-        "Safety: dose, crop registration, PHI and restrictions must be traceable to the authoritative source recorded in the Word document and the exact product label."
+        "هشدار: برای مصرف مزرعه‌ای، دُز، ثبت محصول، کارنس و محدودیت‌ها را با برچسب روز فرآورده و منابع رسمی تطبیق دهید.",
+        "Safety: verify field-use rates, registrations, PHI and restrictions against the current product label and official sources."
     )
 
     fun results(count: Int) = choose("نتایج: $count", "Results: $count")
-    fun updateAvailable(version: String) = choose(
-        "نسخه جدید $version موجود است.",
-        "Version $version is available."
-    )
+    fun updateAvailable(version: String) = choose("نسخه جدید $version موجود است.", "Version $version is available.")
 
     fun themeLabel(mode: ThemeMode) = when (mode) {
         ThemeMode.SYSTEM -> choose("بر اساس تنظیمات گوشی", "Use system setting")
