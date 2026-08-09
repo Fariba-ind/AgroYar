@@ -4,6 +4,7 @@
 
     <application
         android:allowBackup="false"
+        android:hardwareAccelerated="false"
         android:icon="@drawable/ic_agroyar_logo"
         android:label="AgroYar"
         android:supportsRtl="true"
@@ -12,6 +13,7 @@
         <activity
             android:name=".SplashActivity"
             android:exported="true"
+            android:screenOrientation="unspecified"
             android:theme="@style/Theme.AgroYar.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -20,6 +22,7 @@
         </activity>
         <activity
             android:name=".MainActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="unspecified" />
     </application>
 </manifest>
