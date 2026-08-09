@@ -4,9 +4,9 @@
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorAccent">#2E7D32</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F8FAF3</item>
+        <item name="android:statusBarColor">#F8FAF3</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 
     <style name="Theme.AgroYar.Splash" parent="android:style/Theme.Material.Light.NoActionBar">
@@ -15,5 +15,6 @@
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">#EEF0C7</item>
         <item name="android:navigationBarColor">#2A7337</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>
