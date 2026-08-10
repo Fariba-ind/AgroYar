@@ -15,7 +15,7 @@ android {
         // Runtime is intended for Android 10+, while keeping minSdk conservative so APK signing
         // remains maximally compatible with OEM package installers.
         minSdk = 23
-        targetSdk = 29
+        targetSdk = 33
         versionCode = 101
         versionName = "1.0.1"
     }
