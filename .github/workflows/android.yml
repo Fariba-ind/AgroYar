@@ -62,7 +62,7 @@ jobs:
           echo "$BADGING" | grep -q "versionCode='101'"
           echo "$BADGING" | grep -q "versionName='1.0.1'"
           echo "$BADGING" | grep -q "sdkVersion:'23'"
-          echo "$BADGING" | grep -q "targetSdkVersion:'29'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'33'"
           echo "$BADGING" | grep -q "launchable-activity: name='ir.agroyar.app.MainActivity'"
 
           if unzip -l "$APK" | grep -q ' lib/.*\.so'; then
