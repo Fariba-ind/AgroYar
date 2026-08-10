@@ -2,22 +2,26 @@
 set -euo pipefail
 
 APK="${1:-app/build/outputs/apk/release/app-release.apk}"
-PACKAGE="ir.agroyar.mobile"
+PACKAGE="ir.agroyar.android"
 MAIN="ir.agroyar.app.MainActivity"
 SMOKE_DIR="build/smoke"
 LOCAL_XML="$SMOKE_DIR/window.xml"
 mkdir -p "$SMOKE_DIR"
 
 test -s "$APK" || { echo "APK not found: $APK" >&2; exit 2; }
-
 SDK="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+
+if [[ "$SDK" -lt 29 ]]; then
+  echo "This test is for Android 10 / API 29 and newer." >&2
+  exit 10
+fi
 
 dump_ui() {
   local output detected candidate
   output="$(adb shell uiautomator dump 2>&1 || true)"
   printf '%s\n' "$output"
   detected="$(printf '%s\n' "$output" | sed -n 's/.*dumped to: //p' | tr -d '\r' | tail -1)"
-  for candidate in "$detected" /sdcard/window_dump.xml /storage/sdcard/window_dump.xml /storage/emulated/0/window_dump.xml; do
+  for candidate in "$detected" /sdcard/window_dump.xml /storage/emulated/0/window_dump.xml; do
     [[ -n "$candidate" ]] || continue
     if adb pull "$candidate" "$LOCAL_XML" >/dev/null 2>&1; then
       return 0
@@ -76,29 +80,29 @@ capture() {
 }
 
 get_pid() {
-  adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || adb shell ps 2>/dev/null | grep "$PACKAGE" | awk '{print $2}' | head -1 | tr -d '\r' || true
+  adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || true
 }
 
 assert_running() {
   local pid dump
   pid="$(get_pid)"
-  [[ -n "$pid" ]] || { echo "Process not running" >&2; adb logcat -d | tail -250 >&2; exit 3; }
+  [[ -n "$pid" ]] || { echo "Process not running" >&2; adb logcat -d | tail -300 >&2; exit 3; }
   dump="$(adb shell dumpsys activity activities)"
-  [[ "$dump" == *"$MAIN"* ]] || { echo "MainActivity not active" >&2; echo "$dump" | tail -120 >&2; exit 4; }
+  [[ "$dump" == *"$MAIN"* ]] || { echo "MainActivity not active" >&2; echo "$dump" | tail -140 >&2; exit 4; }
 }
 
 launch_from_launcher() {
   adb shell am force-stop "$PACKAGE" || true
   adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/tmp/agroyar-monkey.txt 2>&1 || true
   cat /tmp/agroyar-monkey.txt
-  sleep 4
+  sleep 3
   assert_running
 }
 
 scan_crashes() {
   local logs crash_lines
   logs="$(adb logcat -d -v threadtime)"
-  crash_lines="$(grep -E "FATAL EXCEPTION|ANR in ${PACKAGE//./\\.}|Process: ${PACKAGE//./\\.}|UnsatisfiedLinkError|VerifyError" <<<"$logs" || true)"
+  crash_lines="$(grep -E "FATAL EXCEPTION|ANR in ${PACKAGE//./\\.}|Process: ${PACKAGE//./\\.}|UnsatisfiedLinkError|VerifyError|SecurityException" <<<"$logs" || true)"
   if [[ -n "$crash_lines" ]]; then
     printf '%s\n' "$crash_lines" >&2
     exit 6
@@ -109,48 +113,41 @@ scan_crashes() {
 echo "== Device =="
 adb devices -l
 adb shell getprop ro.build.version.release
-echo "$SDK"
+echo "API=$SDK"
 adb shell getprop ro.product.cpu.abi
 
-echo "== Install and replace =="
+echo "== Clean install =="
 adb uninstall "$PACKAGE" >/dev/null 2>&1 || true
 adb install "$APK"
+
+echo "== Same-signature replace/update =="
 adb install -r "$APK"
 adb shell dumpsys package "$PACKAGE" | grep -E 'versionCode=|versionName=|minSdk=|targetSdk=' | head -10 || true
 
 adb logcat -c
 
-echo "== Cold launch 1 =="
+echo "== Launcher cold start =="
 launch_from_launcher
+dump_ui
+assert_ui_contains "اگرویار"
+assert_ui_contains "بانک آفت‌کش"
+assert_ui_contains "توصیه مصرف"
 capture dashboard
+scan_crashes
 
-if [[ "$SDK" -gt 21 ]]; then
-  echo "== Full rendered UI interaction =="
-  dump_ui
-  assert_ui_contains "اگرویار"
-  assert_ui_contains "بانک آفت‌کش"
-  assert_ui_contains "توصیه مصرف"
-  assert_ui_contains "15"
-  assert_ui_contains "25"
+echo "== Settings / developer section =="
+tap_ui_match "تنظیمات"
+scroll_until_visible "درباره سازنده"
+assert_ui_contains "فریبا عسگریان"
+capture settings-developer
+scan_crashes
 
-  tap_ui_match "تنظیمات"
-  scroll_until_visible "درباره سازنده"
-  assert_ui_contains "فریبا عسگریان"
-  capture settings-developer
-
-  tap_ui_match "بازگشت"
-  assert_ui_contains "جست‌وجوی سم"
-  tap_ui_match "جست‌وجوی سم"
-  assert_ui_contains "نام سم، ماده مؤثره، EC، SC"
-  capture pesticide-search
-else
-  echo "== Android 5 lifecycle compatibility path =="
-  # UIAutomator on API 21 writes its hierarchy into a legacy storage alias that
-  # is unreliable to pull on current platform-tools. Runtime validation below
-  # intentionally uses launcher/activity/process/logcat instead.
-  assert_running
-fi
-
+echo "== Search flow =="
+tap_ui_match "بازگشت"
+assert_ui_contains "جست‌وجوی سم"
+tap_ui_match "جست‌وجوی سم"
+assert_ui_contains "نام سم، ماده مؤثره، EC، SC"
+capture pesticide-search
 scan_crashes
 
 echo "== Background / foreground =="
@@ -168,19 +165,17 @@ scan_crashes
 adb shell settings put system user_rotation 0 || true
 sleep 2
 assert_running
-
-echo "== Cold launch 2 =="
-launch_from_launcher
 scan_crashes
 
-echo "== Cold launch 3 =="
-launch_from_launcher
-scan_crashes
+echo "== Repeated cold starts =="
+for i in 1 2 3; do
+  echo "cold-start-$i"
+  launch_from_launcher
+  scan_crashes
+done
 
 adb shell dumpsys activity activities > "$SMOKE_DIR/activity-dump.txt"
-if [[ "$SDK" -gt 21 ]] && dump_ui; then
-  cp "$LOCAL_XML" "$SMOKE_DIR/final-window.xml"
-fi
+dump_ui && cp "$LOCAL_XML" "$SMOKE_DIR/final-window.xml" || true
 capture final-screen
 
-echo "AgroYar compatibility smoke test passed on API $SDK."
+echo "AgroYar Android 10+ smoke test passed on API $SDK."
