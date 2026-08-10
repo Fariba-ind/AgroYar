@@ -91,10 +91,21 @@ assert_running() {
   [[ "$dump" == *"$MAIN"* ]] || { echo "MainActivity not active" >&2; echo "$dump" | tail -140 >&2; exit 4; }
 }
 
-launch_from_launcher() {
+launch_main_intent() {
+  local resolved start_output
   adb shell am force-stop "$PACKAGE" || true
-  adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/tmp/agroyar-monkey.txt 2>&1 || true
-  cat /tmp/agroyar-monkey.txt
+  resolved="$(adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$PACKAGE" 2>/dev/null | tr -d '\r' | tail -1 || true)"
+  echo "Resolved launcher activity: $resolved"
+  [[ "$resolved" == "$PACKAGE/$MAIN" ]] || {
+    echo "Package manager did not resolve the expected MAIN/LAUNCHER activity" >&2
+    exit 11
+  }
+  start_output="$(adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$PACKAGE/$MAIN")"
+  printf '%s\n' "$start_output"
+  [[ "$start_output" == *"Status: ok"* ]] || {
+    echo "ActivityManager did not report a successful launch" >&2
+    exit 12
+  }
   sleep 3
   assert_running
 }
@@ -107,8 +118,6 @@ scan_crashes() {
     adb logcat -d -v threadtime | tail -350 >&2
     exit 6
   fi
-  # Scope logcat to the actual AgroYar process. System/OEM services may emit
-  # unrelated SecurityException lines that must not be treated as app crashes.
   logs="$(adb logcat -d --pid="$pid" -v threadtime 2>/dev/null || true)"
   crash_lines="$(grep -E "FATAL EXCEPTION|ANR in|UnsatisfiedLinkError|VerifyError|SecurityException" <<<"$logs" || true)"
   if [[ -n "$crash_lines" ]]; then
@@ -134,8 +143,8 @@ adb shell dumpsys package "$PACKAGE" | grep -E 'versionCode=|versionName=|minSdk
 
 adb logcat -c
 
-echo "== Launcher cold start =="
-launch_from_launcher
+echo "== MAIN/LAUNCHER intent cold start =="
+launch_main_intent
 dump_ui
 assert_ui_contains "اگرویار"
 assert_ui_contains "بانک آفت‌کش"
@@ -163,7 +172,7 @@ scan_crashes
 echo "== Background / foreground =="
 adb shell input keyevent KEYCODE_HOME
 sleep 1
-launch_from_launcher
+launch_main_intent
 scan_crashes
 
 echo "== Rotation recreation =="
@@ -180,7 +189,7 @@ scan_crashes
 echo "== Repeated cold starts =="
 for i in 1 2 3; do
   echo "cold-start-$i"
-  launch_from_launcher
+  launch_main_intent
   scan_crashes
 done
 
