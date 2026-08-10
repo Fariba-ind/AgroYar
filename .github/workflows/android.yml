@@ -32,40 +32,59 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Lint, test, and build compatibility release APK
+      - name: Lint, unit test, and build Android 10+ release APK
         run: gradle :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
-      - name: Verify APK structure, manifest, signing, and native independence
+      - name: Verify APK archive, zip alignment, manifest, signing, and architecture independence
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           unzip -tq "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          AAPT="$BUILD_TOOLS/aapt"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          test -x "$APKSIGNER"
+          test -x "$AAPT"
+          test -x "$ZIPALIGN"
+
+          "$ZIPALIGN" -c -v 4 "$APK"
+
           VERIFY_OUTPUT="$($APKSIGNER verify --verbose --print-certs "$APK")"
           echo "$VERIFY_OUTPUT"
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v1 scheme.*true'
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v2 scheme.*true'
+          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v3 scheme.*true'
+
           BADGING="$($AAPT dump badging "$APK")"
-          echo "$BADGING" | head -30
-          echo "$BADGING" | grep -q "package: name='ir.agroyar.mobile'"
-          echo "$BADGING" | grep -q "versionCode='4'"
-          echo "$BADGING" | grep -q "versionName='0.3.0'"
-          echo "$BADGING" | grep -q "sdkVersion:'21'"
+          echo "$BADGING" | head -40
+          echo "$BADGING" | grep -q "package: name='ir.agroyar.android'"
+          echo "$BADGING" | grep -q "versionCode='100'"
+          echo "$BADGING" | grep -q "versionName='1.0.0'"
+          echo "$BADGING" | grep -q "sdkVersion:'23'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'35'"
+          echo "$BADGING" | grep -q "launchable-activity: name='ir.agroyar.app.MainActivity'"
+
           if unzip -l "$APK" | grep -q ' lib/.*\.so'; then
-            echo "Unexpected native libraries found in compatibility APK" >&2
+            echo "Unexpected native libraries found" >&2
             unzip -l "$APK" | grep ' lib/.*\.so' >&2
             exit 1
           fi
-          sha256sum "$APK"
 
-      - name: Upload compatibility APK
+          unzip -l "$APK" | grep -q 'AndroidManifest.xml'
+          unzip -l "$APK" | grep -q 'classes.dex'
+          sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256.txt
+
+      - name: Upload final Android 10+ APK
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-0.3.0-compatibility-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          name: AgroYar-1.0.0-Android10Plus
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/SHA256.txt
           if-no-files-found: error
 
   emulator-smoke:
@@ -76,9 +95,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - api-level: 21
-            arch: x86
-          - api-level: 23
+          - api-level: 29
+            arch: x86_64
+          - api-level: 30
             arch: x86_64
           - api-level: 35
             arch: x86_64
@@ -89,7 +108,7 @@ jobs:
       - name: Download built APK
         uses: actions/download-artifact@v4
         with:
-          name: AgroYar-0.3.0-compatibility-apk
+          name: AgroYar-1.0.0-Android10Plus
           path: artifacts
 
       - name: Enable KVM
@@ -112,6 +131,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-compat-smoke-api-${{ matrix.api-level }}
+          name: AgroYar-Android10Plus-smoke-api-${{ matrix.api-level }}
           path: build/smoke
           if-no-files-found: ignore

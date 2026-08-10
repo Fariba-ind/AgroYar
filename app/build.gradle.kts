@@ -10,15 +10,18 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "ir.agroyar.mobile"
-        minSdk = 21
-        targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        // Fresh package id prevents any signature/package conflict with earlier test builds.
+        applicationId = "ir.agroyar.android"
+        // Keep a conservative minSdk so AGP emits classic signature schemes too.
+        // Release validation and emulator coverage are still Android 10+ (API 29+).
+        minSdk = 23
+        targetSdk = 35
+        versionCode = 100
+        versionName = "1.0.0"
     }
 
     signingConfigs {
-        create("agroyarStandalone") {
+        create("agroyarRelease") {
             storeFile = rootProject.file("keystore/agroyar-debug.keystore")
             storePassword = "agroyar-debug"
             keyAlias = "agroyar-debug"
@@ -26,17 +29,17 @@ android {
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
-            enableV4Signing = true
+            enableV4Signing = false
         }
     }
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("agroyarStandalone")
+            signingConfig = signingConfigs.getByName("agroyarRelease")
             isDebuggable = true
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("agroyarStandalone")
+            signingConfig = signingConfigs.getByName("agroyarRelease")
             isDebuggable = false
             isMinifyEnabled = false
             isShrinkResources = false
