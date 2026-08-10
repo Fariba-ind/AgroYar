@@ -10,14 +10,14 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // Fresh package id prevents any signature/package conflict with earlier test builds.
-        applicationId = "ir.agroyar.android"
-        // Keep a conservative minSdk so AGP emits classic signature schemes too.
-        // Release validation and emulator coverage are still Android 10+ (API 29+).
+        // Completely new package identity to eliminate all conflicts with earlier AgroYar builds.
+        applicationId = "com.agroyar.mobile"
+        // Runtime is intended for Android 10+, while keeping minSdk conservative so APK signing
+        // remains maximally compatible with OEM package installers.
         minSdk = 23
-        targetSdk = 35
-        versionCode = 100
-        versionName = "1.0.0"
+        targetSdk = 29
+        versionCode = 101
+        versionName = "1.0.1"
     }
 
     signingConfigs {
@@ -26,9 +26,10 @@ android {
             storePassword = "agroyar-debug"
             keyAlias = "agroyar-debug"
             keyPassword = "agroyar-debug"
+            // V1 + V2 are the broadest-compatible schemes for Android 10+ sideloading.
             enableV1Signing = true
             enableV2Signing = true
-            enableV3Signing = true
+            enableV3Signing = false
             enableV4Signing = false
         }
     }
