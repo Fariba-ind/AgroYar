@@ -4,17 +4,13 @@
 
     <application
         android:allowBackup="false"
-        android:hardwareAccelerated="false"
         android:icon="@drawable/ic_agroyar_logo"
-        android:roundIcon="@drawable/ic_agroyar_logo"
         android:label="AgroYar"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AgroYar"
-        android:usesCleartextTraffic="false">
+        android:theme="@style/Theme.AgroYar">
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:screenOrientation="unspecified">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

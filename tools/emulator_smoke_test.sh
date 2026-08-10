@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APK="${1:-app/build/outputs/apk/release/app-release.apk}"
-PACKAGE="ir.agroyar.android"
+PACKAGE="com.agroyar.mobile"
 MAIN="ir.agroyar.app.MainActivity"
 SMOKE_DIR="build/smoke"
 LOCAL_XML="$SMOKE_DIR/window.xml"
