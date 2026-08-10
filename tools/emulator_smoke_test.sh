@@ -100,9 +100,17 @@ launch_from_launcher() {
 }
 
 scan_crashes() {
-  local logs crash_lines
-  logs="$(adb logcat -d -v threadtime)"
-  crash_lines="$(grep -E "FATAL EXCEPTION|ANR in ${PACKAGE//./\\.}|Process: ${PACKAGE//./\\.}|UnsatisfiedLinkError|VerifyError|SecurityException" <<<"$logs" || true)"
+  local pid logs crash_lines
+  pid="$(get_pid)"
+  if [[ -z "$pid" ]]; then
+    echo "AgroYar process disappeared during runtime test" >&2
+    adb logcat -d -v threadtime | tail -350 >&2
+    exit 6
+  fi
+  # Scope logcat to the actual AgroYar process. System/OEM services may emit
+  # unrelated SecurityException lines that must not be treated as app crashes.
+  logs="$(adb logcat -d --pid="$pid" -v threadtime 2>/dev/null || true)"
+  crash_lines="$(grep -E "FATAL EXCEPTION|ANR in|UnsatisfiedLinkError|VerifyError|SecurityException" <<<"$logs" || true)"
   if [[ -n "$crash_lines" ]]; then
     printf '%s\n' "$crash_lines" >&2
     exit 6
@@ -140,6 +148,7 @@ tap_ui_match "تنظیمات"
 scroll_until_visible "درباره سازنده"
 assert_ui_contains "فریبا عسگریان"
 capture settings-developer
+assert_running
 scan_crashes
 
 echo "== Search flow =="
@@ -148,6 +157,7 @@ assert_ui_contains "جست‌وجوی سم"
 tap_ui_match "جست‌وجوی سم"
 assert_ui_contains "نام سم، ماده مؤثره، EC، SC"
 capture pesticide-search
+assert_running
 scan_crashes
 
 echo "== Background / foreground =="
