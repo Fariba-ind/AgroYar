@@ -64,7 +64,7 @@ jobs:
           echo "$BADGING" | grep -q "package: name='ir.agroyar.android'"
           echo "$BADGING" | grep -q "versionCode='100'"
           echo "$BADGING" | grep -q "versionName='1.0.0'"
-          echo "$BADGING" | grep -q "sdkVersion:'29'"
+          echo "$BADGING" | grep -q "sdkVersion:'23'"
           echo "$BADGING" | grep -q "targetSdkVersion:'35'"
           echo "$BADGING" | grep -q "launchable-activity: name='ir.agroyar.app.MainActivity'"
 
@@ -74,7 +74,6 @@ jobs:
             exit 1
           fi
 
-          # Verify it is an APK, not an app bundle or split package.
           unzip -l "$APK" | grep -q 'AndroidManifest.xml'
           unzip -l "$APK" | grep -q 'classes.dex'
           sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256.txt
