@@ -32,10 +32,10 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Lint, unit test, and build Android 10+ release APK
+      - name: Lint, unit test, and build install-compatible release APK
         run: gradle :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
-      - name: Verify APK archive, zip alignment, manifest, signing, and architecture independence
+      - name: Verify archive, zipalign, manifest and conservative signing
         shell: bash
         run: |
           set -euo pipefail
@@ -47,9 +47,6 @@ jobs:
           APKSIGNER="$BUILD_TOOLS/apksigner"
           AAPT="$BUILD_TOOLS/aapt"
           ZIPALIGN="$BUILD_TOOLS/zipalign"
-          test -x "$APKSIGNER"
-          test -x "$AAPT"
-          test -x "$ZIPALIGN"
 
           "$ZIPALIGN" -c -v 4 "$APK"
 
@@ -57,20 +54,19 @@ jobs:
           echo "$VERIFY_OUTPUT"
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v1 scheme.*true'
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v2 scheme.*true'
-          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v3 scheme.*true'
+          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v3 scheme.*false'
 
           BADGING="$($AAPT dump badging "$APK")"
           echo "$BADGING" | head -40
-          echo "$BADGING" | grep -q "package: name='ir.agroyar.android'"
-          echo "$BADGING" | grep -q "versionCode='100'"
-          echo "$BADGING" | grep -q "versionName='1.0.0'"
+          echo "$BADGING" | grep -q "package: name='com.agroyar.mobile'"
+          echo "$BADGING" | grep -q "versionCode='101'"
+          echo "$BADGING" | grep -q "versionName='1.0.1'"
           echo "$BADGING" | grep -q "sdkVersion:'23'"
-          echo "$BADGING" | grep -q "targetSdkVersion:'35'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'29'"
           echo "$BADGING" | grep -q "launchable-activity: name='ir.agroyar.app.MainActivity'"
 
           if unzip -l "$APK" | grep -q ' lib/.*\.so'; then
             echo "Unexpected native libraries found" >&2
-            unzip -l "$APK" | grep ' lib/.*\.so' >&2
             exit 1
           fi
 
@@ -78,10 +74,10 @@ jobs:
           unzip -l "$APK" | grep -q 'classes.dex'
           sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256.txt
 
-      - name: Upload final Android 10+ APK
+      - name: Upload installer-compatible APK
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-1.0.0-Android10Plus
+          name: AgroYar-1.0.1-InstallCompat
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/SHA256.txt
@@ -108,7 +104,7 @@ jobs:
       - name: Download built APK
         uses: actions/download-artifact@v4
         with:
-          name: AgroYar-1.0.0-Android10Plus
+          name: AgroYar-1.0.1-InstallCompat
           path: artifacts
 
       - name: Enable KVM
@@ -117,7 +113,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Install and exercise AgroYar from launcher
+      - name: Install and exercise AgroYar
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -131,6 +127,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-Android10Plus-smoke-api-${{ matrix.api-level }}
+          name: AgroYar-InstallCompat-smoke-api-${{ matrix.api-level }}
           path: build/smoke
           if-no-files-found: ignore
