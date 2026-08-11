@@ -10,14 +10,16 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // Completely new package identity to eliminate all conflicts with earlier AgroYar builds.
+        // Stable production package id for future in-place updates.
         applicationId = "com.agroyar.mobile"
-        // Runtime is intended for Android 10+, while keeping minSdk conservative so APK signing
-        // remains maximally compatible with OEM package installers.
+        // Android 10+ is the supported delivery target; a conservative minSdk keeps
+        // classic signature schemes available for broader OEM installer compatibility.
         minSdk = 23
-        targetSdk = 33
-        versionCode = 101
-        versionName = "1.0.1"
+        // Target the current Android 16 API so Play Protect does not classify the APK
+        // as being built for an obsolete Android privacy/security model.
+        targetSdk = 36
+        versionCode = 102
+        versionName = "1.0.2"
     }
 
     signingConfigs {
@@ -26,10 +28,11 @@ android {
             storePassword = "agroyar-debug"
             keyAlias = "agroyar-debug"
             keyPassword = "agroyar-debug"
-            // V1 + V2 are the broadest-compatible schemes for Android 10+ sideloading.
+            // Include all APK signature schemes relevant to Android 10+ while retaining
+            // compatibility with package installers that still inspect V1/V2 metadata.
             enableV1Signing = true
             enableV2Signing = true
-            enableV3Signing = false
+            enableV3Signing = true
             enableV4Signing = false
         }
     }
