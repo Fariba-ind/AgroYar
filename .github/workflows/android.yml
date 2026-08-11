@@ -32,10 +32,10 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Lint, unit test, and build install-compatible release APK
+      - name: Lint, unit test, and build current-target release APK
         run: gradle :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
-      - name: Verify archive, zipalign, manifest and conservative signing
+      - name: Verify archive, zipalign, manifest and modern signing
         shell: bash
         run: |
           set -euo pipefail
@@ -54,15 +54,15 @@ jobs:
           echo "$VERIFY_OUTPUT"
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v1 scheme.*true'
           echo "$VERIFY_OUTPUT" | grep -q 'Verified using v2 scheme.*true'
-          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v3 scheme.*false'
+          echo "$VERIFY_OUTPUT" | grep -q 'Verified using v3 scheme.*true'
 
           BADGING="$($AAPT dump badging "$APK")"
           echo "$BADGING" | head -40
           echo "$BADGING" | grep -q "package: name='com.agroyar.mobile'"
-          echo "$BADGING" | grep -q "versionCode='101'"
-          echo "$BADGING" | grep -q "versionName='1.0.1'"
+          echo "$BADGING" | grep -q "versionCode='102'"
+          echo "$BADGING" | grep -q "versionName='1.0.2'"
           echo "$BADGING" | grep -q "sdkVersion:'23'"
-          echo "$BADGING" | grep -q "targetSdkVersion:'33'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'36'"
           echo "$BADGING" | grep -q "launchable-activity: name='ir.agroyar.app.MainActivity'"
 
           if unzip -l "$APK" | grep -q ' lib/.*\.so'; then
@@ -74,10 +74,10 @@ jobs:
           unzip -l "$APK" | grep -q 'classes.dex'
           sha256sum "$APK" | tee app/build/outputs/apk/release/SHA256.txt
 
-      - name: Upload installer-compatible APK
+      - name: Upload Android 16-targeted APK
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-1.0.1-InstallCompat
+          name: AgroYar-1.0.2-Target36
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/SHA256.txt
@@ -97,6 +97,8 @@ jobs:
             arch: x86_64
           - api-level: 35
             arch: x86_64
+          - api-level: 36
+            arch: x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -104,7 +106,7 @@ jobs:
       - name: Download built APK
         uses: actions/download-artifact@v4
         with:
-          name: AgroYar-1.0.1-InstallCompat
+          name: AgroYar-1.0.2-Target36
           path: artifacts
 
       - name: Enable KVM
@@ -127,6 +129,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AgroYar-InstallCompat-smoke-api-${{ matrix.api-level }}
+          name: AgroYar-Target36-smoke-api-${{ matrix.api-level }}
           path: build/smoke
           if-no-files-found: ignore
